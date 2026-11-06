@@ -116,6 +116,12 @@ public partial class MainWindow : Window
                 { Owner = this, SelfTestOutput = gifOut }.Show();
                 return;
             }
+            if (App.SelfTestVideo is (string vidIn, string vidOut))
+            {
+                new VideoEditor.VideoEditorWindow(new VideoEditor.VideoEditorOptions { Input = vidIn, Start = 0, End = 0 })
+                { Owner = this, SelfTestOutput = vidOut }.Show();
+                return;
+            }
             if (App.SelfTest)
             {
                 var displays = Displays.GetAll();
@@ -604,7 +610,6 @@ public partial class MainWindow : Window
     private void OnFormatChanged(object sender, RoutedEventArgs e)
     {
         if (GifOptions != null) GifOptions.Visibility = FmtGif.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        if (ExportButton != null) ExportButton.Content = FmtGif.IsChecked == true ? "Open GIF editor…" : "Export…";
     }
 
     private async void OnExport(object sender, RoutedEventArgs e)
@@ -614,10 +619,14 @@ public partial class MainWindow : Window
         string ext = fmt switch { ExportFormat.Gif => "gif", ExportFormat.Mkv => "mkv", _ => "mp4" };
         double length = _trimEnd - _trimStart;
 
-        if (fmt == ExportFormat.Gif)
+        double end = _trimEnd;
+        if (fmt == ExportFormat.Gif && length > GifEditor.GifRenderer.MaxSeconds + 0.05)
         {
-            OpenGifEditor(length);
-            return;
+            if (MessageBox.Show(this, $"GIFs are limited to 15 seconds and your selection is {Fmt(length)}.\n\n" +
+                    $"The first 15 seconds ({Fmt(_trimStart)} to {Fmt(_trimStart + GifEditor.GifRenderer.MaxSeconds)}) will be exported.",
+                    "Export GIF", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
+                return;
+            end = _trimStart + GifEditor.GifRenderer.MaxSeconds;
         }
 
         var dlg = new SaveFileDialog
@@ -643,7 +652,7 @@ public partial class MainWindow : Window
             Output = dlg.FileName,
             Format = fmt,
             Start = _trimStart,
-            End = _trimEnd,
+            End = end,
             SourceDuration = _duration,
             Overlay = useText ? _overlay : null,
             GifFps = int.Parse((string)((ComboBoxItem)GifFpsCombo.SelectedItem).Tag),
@@ -682,6 +691,25 @@ public partial class MainWindow : Window
             _mode = Mode.Idle;
             UpdateUi();
         }
+    }
+
+    private void OnOpenEditor(object sender, RoutedEventArgs e)
+    {
+        if (_videoPath == null || _mode != Mode.Idle) return;
+        double length = _trimEnd - _trimStart;
+        if (SelectedFormat == ExportFormat.Gif) { OpenGifEditor(length); return; }
+
+        PausePlayback();
+        RefreshOverlay();
+        new VideoEditor.VideoEditorWindow(new VideoEditor.VideoEditorOptions
+        {
+            Input = _videoPath,
+            Start = _trimStart,
+            End = _trimEnd,
+            Format = SelectedFormat,
+            InitialText = _overlay.IsEmpty ? null : _overlay,
+        })
+        { Owner = this }.Show();
     }
 
     private void OpenGifEditor(double length)
@@ -757,6 +785,7 @@ public partial class MainWindow : Window
         Timeline.IsEnabled = idle && hasVideo;
         EditPanel.IsEnabled = _mode is Mode.Idle or Mode.Exporting;
         ExportButton.IsEnabled = idle && hasVideo;
+        EditorButton.IsEnabled = idle && hasVideo;
         CancelExportButton.IsEnabled = _mode == Mode.Exporting;
 
         RecBadge.Visibility = recording && _mode != Mode.Countdown ? Visibility.Visible : Visibility.Collapsed;

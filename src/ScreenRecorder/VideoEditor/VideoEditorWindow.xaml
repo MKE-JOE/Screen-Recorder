@@ -1,0 +1,182 @@
+<Window x:Class="ScreenRecorder.VideoEditor.VideoEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Video Editor" Width="1200" Height="800" MinWidth="980" MinHeight="640"
+        Background="{StaticResource WindowBg}" FontFamily="Segoe UI" FontSize="13"
+        WindowStartupLocation="CenterOwner" Icon="/Assets/app.ico">
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="10"/>
+            <ColumnDefinition Width="330"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ===== Preview + timeline ===== -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Border CornerRadius="8" Background="#111318" ClipToBounds="True">
+                <Viewbox Stretch="Uniform" Margin="8">
+                    <Grid x:Name="Stage" Width="1280" Height="720">
+                        <MediaElement x:Name="Media" LoadedBehavior="Manual" UnloadedBehavior="Manual" ScrubbingEnabled="True"
+                                      Stretch="Fill" MediaOpened="OnMediaOpened" MediaFailed="OnMediaFailed"/>
+                        <Canvas x:Name="StageCanvas" ClipToBounds="True" Background="Transparent"
+                                MouseMove="OnStageMouseMove" MouseLeftButtonUp="OnStageMouseUp">
+                            <Path x:Name="CropMask" Fill="#99000000" IsHitTestVisible="False" Visibility="Collapsed"/>
+                            <Border x:Name="CropBox" BorderBrush="White" BorderThickness="3" Background="#01FFFFFF"
+                                    Cursor="SizeAll" Visibility="Collapsed" MouseLeftButtonDown="OnCropMouseDown"/>
+                            <Thumb x:Name="CropHandle" Width="24" Height="24" Cursor="SizeNWSE" Visibility="Collapsed" DragDelta="OnCropResize">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Rectangle Fill="White" Stroke="#2563EB" StrokeThickness="3"/>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Canvas>
+                    </Grid>
+                </Viewbox>
+            </Border>
+
+            <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,10,0,0" Padding="12,10">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="70"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="70"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="PositionText" Text="0:00.0" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}"/>
+                        <Slider x:Name="Timeline" Grid.Column="1" Minimum="0" Maximum="1" IsMoveToPointEnabled="True"
+                                IsSelectionRangeEnabled="True" VerticalAlignment="Center" ValueChanged="OnTimelineChanged"/>
+                        <TextBlock x:Name="DurationText" Grid.Column="2" Text="0:00.0" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextMuted}"/>
+                    </Grid>
+                    <DockPanel Margin="0,8,0,0">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                            <Button x:Name="PlayButton" Content="▶ Play" Width="84" Click="OnPlayPause"/>
+                            <RepeatButton Content="−5 s" Margin="6,0,0,0" Delay="400" Interval="150" Click="OnBack"/>
+                            <RepeatButton Content="+5 s" Margin="4,0,0,0" Delay="400" Interval="150" Click="OnForward"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                            <Button Content="Set start here" Click="OnSetStart"/>
+                            <Button Content="Set end here" Margin="4,0,0,0" Click="OnSetEnd"/>
+                            <Button Content="Reset" Margin="4,0,0,0" Click="OnResetTrim"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TrimText" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource TextMuted}"/>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ===== Side panel ===== -->
+        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="SidePanel">
+                <Border x:Name="TextCard" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <Button DockPanel.Dock="Right" Content="Remove" Click="OnRemoveLayer" Margin="4,0,0,0"/>
+                            <Button DockPanel.Dock="Right" Content="+ Add text" Click="OnAddLayer"/>
+                            <TextBlock Style="{StaticResource CardTitle}" Margin="0" VerticalAlignment="Center" Text="Text"/>
+                        </DockPanel>
+                        <ListBox x:Name="LayerList" Height="64" SelectionChanged="OnLayerSelected"/>
+                        <StackPanel x:Name="LayerEditor" Margin="0,8,0,0" IsEnabled="False">
+                            <TextBox x:Name="LayerText" Height="44" AcceptsReturn="True" TextWrapping="Wrap" Padding="4" TextChanged="OnLayerEdited"/>
+                            <Grid Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="LayerFont" SelectionChanged="OnLayerEdited"/>
+                                <ComboBox x:Name="LayerColor" Grid.Column="2" SelectionChanged="OnLayerEdited"/>
+                            </Grid>
+                            <Grid Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="38"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Style="{StaticResource Label}" Text="Size"/>
+                                <Slider x:Name="LayerSize" Grid.Column="1" Minimum="12" Maximum="300" Value="64" VerticalAlignment="Center"
+                                        ValueChanged="OnLayerEdited"/>
+                                <TextBlock x:Name="LayerSizeText" Grid.Column="2" Text="64" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="LayerOutline" Grid.Column="3" Content="Outline" Margin="8,0,0,0" VerticalAlignment="Center"
+                                          Checked="OnLayerEdited" Unchecked="OnLayerEdited"/>
+                            </Grid>
+                            <WrapPanel Margin="0,6,0,0">
+                                <Button Content="Top" Tag="top" Margin="0,0,4,0" Click="OnLayerPlace"/>
+                                <Button Content="Middle" Tag="middle" Margin="0,0,4,0" Click="OnLayerPlace"/>
+                                <Button Content="Bottom" Tag="bottom" Margin="0,0,8,0" Click="OnLayerPlace"/>
+                                <CheckBox x:Name="LayerCenter" Content="Center" VerticalAlignment="Center" Checked="OnLayerEdited" Unchecked="OnLayerEdited"/>
+                            </WrapPanel>
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="4"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Style="{StaticResource Label}" Text="Show from" Width="70"/>
+                                <TextBlock x:Name="LayerFromText" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <Button Grid.Column="2" Content="Set to now" Click="OnLayerFrom"/>
+                                <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="Until" Width="70"/>
+                                <TextBlock x:Name="LayerToText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <Button Grid.Row="2" Grid.Column="2" Content="Set to now" Click="OnLayerTo"/>
+                            </Grid>
+                            <Button Content="Show for the whole clip" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OnLayerAll"/>
+                            <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Text="Drag the text on the preview to move it."/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="CropCard" Style="{StaticResource Card}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Crop and size"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="6"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="CropCombo" SelectionChanged="OnCropPreset" ToolTip="Crop shape"/>
+                            <ComboBox x:Name="SizeCombo" Grid.Column="2" SelectionChanged="OnSizeChanged" ToolTip="Output size"/>
+                        </Grid>
+                        <TextBlock x:Name="CropText" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource CardTitle}" Text="Export"/>
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="FmtMp4" Content="MP4" Margin="0,0,14,0" IsChecked="True"/>
+                            <RadioButton x:Name="FmtMkv" Content="MKV"/>
+                        </StackPanel>
+                        <Button x:Name="ExportButton" Style="{StaticResource PrimaryButton}" Content="Save video…" Margin="0,10,0,0" Padding="10,7"
+                                Click="OnExport"/>
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar x:Name="ExportProgress" Height="8" Minimum="0" Maximum="1" VerticalAlignment="Center"/>
+                            <Button x:Name="CancelButton" Grid.Column="1" Content="Cancel" Margin="8,0,0,0" IsEnabled="False" Click="OnCancel"/>
+                        </Grid>
+                        <TextBlock x:Name="ExportText" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextMuted}"
+                                   Text="H.264 video (high quality) with AAC 320 kbps audio."/>
+                        <Button x:Name="ShowFileButton" Content="Show in folder" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                Visibility="Collapsed" Click="OnShowFile"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>

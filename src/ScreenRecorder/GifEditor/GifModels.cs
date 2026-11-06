@@ -43,6 +43,12 @@ public sealed class TextLayer
     /// <summary>Last frame (0-based, inclusive). int.MaxValue means "to the end".</summary>
     public int ToFrame { get; set; } = int.MaxValue;
 
+    /// <summary>Video editor: shown from this time (seconds in the source video).</summary>
+    public double StartSec { get; set; }
+    /// <summary>Video editor: shown until this time. double.MaxValue means "to the end".</summary>
+    public double EndSec { get; set; } = double.MaxValue;
+    public bool IsAt(double seconds) => seconds >= StartSec && seconds <= EndSec;
+
     public int OutlineWidth => Math.Max(2, (int)Math.Round(FontSize / 18));
     public bool IsOnFrame(int index) => index >= FromFrame && index <= ToFrame;
     public override string ToString() => string.IsNullOrWhiteSpace(Text) ? "(empty)" : Text.Replace("\r", "").Replace('\n', ' ');

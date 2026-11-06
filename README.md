@@ -16,7 +16,13 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
 - **Trim:** set the start and end of the clip before exporting.
 - **Add text:** type text, pick a font, size and colour, and drag it into place on the preview. It's burned into GIF exports, and into MP4/MKV too if you tick the box.
 - **Export** to **MP4, MKV or GIF**. GIFs use a two-pass, optimised palette, and you can choose their width and frame rate.
-- **GIF editor** (choose GIF, then *Open GIF editor…*): turns up to **15 seconds** of the clip into frames you can edit.
+- Every format has two buttons: **Export…** saves the clip straight away with the default settings (GIFs are capped at 15 seconds), and **Open in editor…** opens it in an editor first.
+- **Video editor** (MP4 or MKV, then *Open in editor…*): a simple editor that keeps full quality.
+  - Preview with play/pause, a scrub bar and ±5 s skip. Set the start and end to trim.
+  - **Text captions** that show for the time range you choose ("from here" / "to here"), each with its own font, size, colour and outline. Drag them into place.
+  - **Crop** presets (square, portrait 4:5, wide 16:9, story 9:16, free) and **resize** to 1080p, 720p or 480p (never upscales).
+  - Saves as MP4 or MKV with H.264 (CRF 18) and AAC 320 kbps audio. Captions are drawn exactly as they look in the preview.
+- **GIF editor** (choose GIF, then *Open in editor…*): turns up to **15 seconds** of the clip into frames you can edit.
   - Frame strip with thumbnails. Select several frames with Ctrl/Shift to **delete**, **duplicate**, **move** them, or set how long each one shows.
   - **Reverse**, **Boomerang** (forward then back), **Faster / Slower**, and **Reduce** (drops every other frame for a smaller file but keeps the timing). **Undo/Redo** with Ctrl+Z / Ctrl+Y.
   - **Text layers** that appear only on the frames you choose, so captions can come and go. Drag them into place on the preview.
