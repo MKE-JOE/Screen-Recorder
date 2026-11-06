@@ -67,6 +67,15 @@ jobs:
         shell: pwsh
         run: Get-ChildItem publish | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
 
+      - name: Self-test (start the app, unpack FFmpeg, enumerate devices, exit)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest' -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "App did not finish its self-test (hung or showed a dialog)" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "Self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
       - uses: actions/upload-artifact@v4
         with:
           name: ScreenRecorder-1.0.${{ github.run_number }}

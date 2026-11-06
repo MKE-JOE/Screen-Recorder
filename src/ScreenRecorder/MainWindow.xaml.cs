@@ -90,9 +90,17 @@ public partial class MainWindow : Window
             await Ffmpeg.EnsureAsync();
             _ffmpegReady = true;
             SetStatus("Ready");
+            if (App.SelfTest)
+            {
+                var displays = Displays.GetAll();
+                var target = Displays.Resolve(_region.GetCaptureRect());
+                App.Pass($"ffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +
+                         $"playback={AudioCombo.Items.Count} mics={MicCombo.Items.Count}");
+            }
         }
         catch (Exception ex)
         {
+            if (App.SelfTest) App.Fail(ex.ToString());
             SetStatus("Encoder not available");
             MessageBox.Show(this, "Could not prepare FFmpeg:\n\n" + ex.Message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
         }
