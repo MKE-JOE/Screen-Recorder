@@ -18,6 +18,8 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="8"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <TextBlock Style="{StaticResource Label}" Text="Record"/>
             <TextBox x:Name="RecordBox" Grid.Column="1" IsReadOnly="True" Padding="6,4" Cursor="Hand"
@@ -27,6 +29,9 @@
                      PreviewKeyDown="OnCapture" GotKeyboardFocus="OnFocus" LostKeyboardFocus="OnBlur"/>
             <TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="Stop and save"/>
             <TextBox x:Name="StopBox" Grid.Row="4" Grid.Column="1" IsReadOnly="True" Padding="6,4" Cursor="Hand"
+                     PreviewKeyDown="OnCapture" GotKeyboardFocus="OnFocus" LostKeyboardFocus="OnBlur"/>
+            <TextBlock Grid.Row="6" Style="{StaticResource Label}" Text="Show / hide frame"/>
+            <TextBox x:Name="FrameBox" Grid.Row="6" Grid.Column="1" IsReadOnly="True" Padding="6,4" Cursor="Hand"
                      PreviewKeyDown="OnCapture" GotKeyboardFocus="OnFocus" LostKeyboardFocus="OnBlur"/>
         </Grid>
         <TextBlock x:Name="ErrorText" Foreground="#C0262D" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed"/>

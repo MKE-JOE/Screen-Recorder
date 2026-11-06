@@ -42,7 +42,8 @@ public partial class MainWindow : Window
 
     private readonly RegionWindow _region = new();
     private readonly ControlBar _bar = new();
-    private const int HotkeyRecord = 1, HotkeyPause = 2, HotkeyStop = 3;
+    private const int HotkeyRecord = 1, HotkeyPause = 2, HotkeyStop = 3, HotkeyFrame = 4;
+    private bool _frameHidden;
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly TextOverlay _overlay = new();
@@ -85,6 +86,9 @@ public partial class MainWindow : Window
         _bar.PauseRequested += () => { if (_mode is Mode.Recording or Mode.Paused) OnPause(this, new RoutedEventArgs()); };
         _bar.StopRequested += () => { if (_mode is Mode.Countdown or Mode.Recording or Mode.Paused) OnStop(this, new RoutedEventArgs()); };
         _bar.ShowAppRequested += RestoreMainWindow;
+        _bar.ToggleFrameRequested += ToggleFrame;
+        _region.HotkeysRequested += () => OnChangeHotkeys(this, new RoutedEventArgs());
+        _region.HideRequested += ToggleFrame;
         Closing += OnClosing;
     }
 
@@ -159,7 +163,8 @@ public partial class MainWindow : Window
     private void OnCaptureModeChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!IsLoaded) return;
-        if (AreaMode) _region.Show(); else _region.Hide();
+        if (AreaMode && !_frameHidden) _region.Show(); else _region.Hide();
+        _bar.SetFrameState(AreaMode, _frameHidden);
         SizeCombo.IsEnabled = AreaMode && _mode == Mode.Idle;
     }
 
@@ -742,22 +747,22 @@ public partial class MainWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         UnregisterHotkeys();
         var failed = new List<string>();
-        foreach (var (id, key) in new[] { (HotkeyRecord, _settings.RecordKey), (HotkeyPause, _settings.PauseKey), (HotkeyStop, _settings.StopKey) })
+        foreach (var (id, key) in new[] { (HotkeyRecord, _settings.RecordKey), (HotkeyPause, _settings.PauseKey), (HotkeyStop, _settings.StopKey), (HotkeyFrame, _settings.ToggleFrameKey) })
         {
             if (!NativeMethods.RegisterHotKey(hwnd, id, key.Modifiers | NativeMethods.MOD_NOREPEAT, key.VirtualKey))
                 failed.Add(key.ToString());
         }
         HotkeyText.Text = failed.Count == 0
-            ? $"Hotkeys: {_settings.RecordKey} record · {_settings.PauseKey} pause · {_settings.StopKey} stop"
+            ? $"Hotkeys: {_settings.RecordKey} record · {_settings.PauseKey} pause · {_settings.StopKey} stop · {_settings.ToggleFrameKey} frame"
             : "In use by another app, pick others: " + string.Join(", ", failed);
         HotkeyText.Foreground = failed.Count == 0 ? (Brush)FindResource("TextMuted") : new SolidColorBrush(Color.FromRgb(0xC0, 0x26, 0x2D));
-        _bar.SetHotkeyHints(_settings.RecordKey.ToString(), _settings.PauseKey.ToString(), _settings.StopKey.ToString());
+        _bar.SetHotkeyHints(_settings.RecordKey.ToString(), _settings.PauseKey.ToString(), _settings.StopKey.ToString(), _settings.ToggleFrameKey.ToString());
     }
 
     private void UnregisterHotkeys()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
-        foreach (int id in new[] { HotkeyRecord, HotkeyPause, HotkeyStop }) NativeMethods.UnregisterHotKey(hwnd, id);
+        foreach (int id in new[] { HotkeyRecord, HotkeyPause, HotkeyStop, HotkeyFrame }) NativeMethods.UnregisterHotKey(hwnd, id);
     }
 
     private void OnChangeHotkeys(object sender, RoutedEventArgs e)
@@ -770,6 +775,7 @@ public partial class MainWindow : Window
             _settings.RecordKey = dlg.RecordKey;
             _settings.PauseKey = dlg.PauseKey;
             _settings.StopKey = dlg.StopKey;
+            _settings.ToggleFrameKey = dlg.ToggleFrameKey;
             _settings.Save();
         }
         RegisterHotkeys();
@@ -788,11 +794,23 @@ public partial class MainWindow : Window
             case HotkeyPause:
                 if (_mode is Mode.Recording or Mode.Paused) OnPause(this, new RoutedEventArgs());
                 break;
+            case HotkeyFrame:
+                ToggleFrame();
+                break;
             case HotkeyStop:
                 if (_mode is Mode.Countdown or Mode.Recording or Mode.Paused) OnStop(this, new RoutedEventArgs());
                 break;
         }
         return IntPtr.Zero;
+    }
+
+    /// <summary>Hide or show the capture frame. A hidden frame still marks the area that gets recorded.</summary>
+    private void ToggleFrame()
+    {
+        if (!AreaMode) return;
+        _frameHidden = !_frameHidden;
+        if (_frameHidden) _region.Hide(); else _region.Show();
+        _bar.SetFrameState(true, _frameHidden);
     }
 
     private void RestoreMainWindow()

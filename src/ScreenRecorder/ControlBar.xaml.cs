@@ -11,7 +11,9 @@ namespace ScreenRecorder;
 /// </summary>
 public partial class ControlBar : Window
 {
-    public event Action? RecordRequested, PauseRequested, StopRequested, ShowAppRequested;
+    public event Action? RecordRequested, PauseRequested, StopRequested, ShowAppRequested, ToggleFrameRequested;
+    private string _frameKey = "";
+    private bool _frameHidden;
 
     public ControlBar()
     {
@@ -31,12 +33,25 @@ public partial class ControlBar : Window
         };
     }
 
-    public void SetHotkeyHints(string record, string pause, string stop)
+    public void SetHotkeyHints(string record, string pause, string stop, string frame)
     {
+        _frameKey = frame;
+        UpdateFrameTip();
         RecordBtn.ToolTip = $"Record ({record})";
         PauseBtn.ToolTip = $"Pause / resume ({pause})";
         StopBtn.ToolTip = $"Stop and save ({stop})";
     }
+
+    public void SetFrameState(bool available, bool hidden)
+    {
+        _frameHidden = hidden;
+        FrameBtn.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        FrameIcon.Opacity = hidden ? 0.45 : 1;
+        UpdateFrameTip();
+    }
+
+    private void UpdateFrameTip() =>
+        FrameBtn.ToolTip = (_frameHidden ? "Show the capture frame" : "Hide the capture frame") + (_frameKey.Length > 0 ? $" ({_frameKey})" : "");
 
     public void SetState(bool canRecord, bool canPause, bool canStop, bool live, bool paused, string time)
     {
@@ -57,5 +72,6 @@ public partial class ControlBar : Window
     private void OnRecord(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
     private void OnPause(object sender, RoutedEventArgs e) => PauseRequested?.Invoke();
     private void OnStop(object sender, RoutedEventArgs e) => StopRequested?.Invoke();
+    private void OnToggleFrame(object sender, RoutedEventArgs e) => ToggleFrameRequested?.Invoke();
     private void OnShowApp(object sender, RoutedEventArgs e) => ShowAppRequested?.Invoke();
 }

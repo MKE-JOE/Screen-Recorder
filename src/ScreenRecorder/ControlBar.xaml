@@ -62,6 +62,10 @@
             <TextBlock x:Name="TimeText" Text="Ready" Foreground="White" FontFamily="Segoe UI" FontSize="14" FontWeight="SemiBold"
                        VerticalAlignment="Center" MinWidth="64" Margin="6,0,6,0"/>
             <Rectangle Width="1" Fill="#4B5563" Margin="2,6"/>
+            <Button x:Name="FrameBtn" Style="{StaticResource BarButton}" ToolTip="Hide the capture frame" Click="OnToggleFrame">
+                <Path x:Name="FrameIcon" Style="{StaticResource BarIcon}" Fill="Transparent" Stroke="White" StrokeThickness="1.6"
+                      StrokeDashArray="2 1.5" Data="M0,0 H12 V12 H0 Z"/>
+            </Button>
             <Button Style="{StaticResource BarButton}" ToolTip="Show the main window" Click="OnShowApp">
                 <Path Style="{StaticResource BarIcon}" Fill="Transparent" Stroke="White" StrokeThickness="1.6"
                       Data="M0,0 H12 V9 H0 Z M0,2.5 H12"/>

@@ -34,6 +34,16 @@
         <!-- Band around the capture area (outside what gets recorded). -->
         <Border x:Name="Band" BorderThickness="10" BorderBrush="#332563EB" MouseLeftButtonDown="OnDragMove">
             <Border x:Name="CaptureArea" Background="#182563EB" MouseLeftButtonDown="OnDragMove">
+                <Grid>
+                <Border x:Name="ToolPill" Background="#CC111827" CornerRadius="8" Padding="4"
+                        HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Hotkeys…" Margin="0,0,4,0" Padding="8,3" FontSize="12" Click="OnHotkeys"
+                                ToolTip="Change the record / pause / stop hotkeys"/>
+                        <Button Content="Hide frame" Padding="8,3" FontSize="12" Click="OnHide"
+                                ToolTip="Hide this frame. The same area is still recorded. Show it again from the floating bar or with the hotkey."/>
+                    </StackPanel>
+                </Border>
                 <Border x:Name="InfoPill" Background="#CC111827" CornerRadius="8" Padding="14,8"
                         HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
                     <StackPanel>
@@ -43,6 +53,7 @@
                                    Text="Drag to move · drag the edges or corners to resize"/>
                     </StackPanel>
                 </Border>
+                </Grid>
             </Border>
         </Border>
         <Rectangle x:Name="Outline" Margin="7" Stroke="#2563EB" StrokeThickness="3" StrokeDashArray="3 2" IsHitTestVisible="False"/>

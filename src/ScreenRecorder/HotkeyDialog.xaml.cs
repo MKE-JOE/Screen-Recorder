@@ -14,6 +14,7 @@ public partial class HotkeyDialog : Window
     public Hotkey RecordKey => _keys[RecordBox];
     public Hotkey PauseKey => _keys[PauseBox];
     public Hotkey StopKey => _keys[StopBox];
+    public Hotkey ToggleFrameKey => _keys[FrameBox];
 
     public HotkeyDialog(AppSettings current)
     {
@@ -21,6 +22,7 @@ public partial class HotkeyDialog : Window
         Set(RecordBox, current.RecordKey);
         Set(PauseBox, current.PauseKey);
         Set(StopBox, current.StopKey);
+        Set(FrameBox, current.ToggleFrameKey);
     }
 
     private void Set(TextBox box, Hotkey key)
@@ -67,12 +69,13 @@ public partial class HotkeyDialog : Window
         Set(RecordBox, AppSettings.DefaultRecord);
         Set(PauseBox, AppSettings.DefaultPause);
         Set(StopBox, AppSettings.DefaultStop);
+        Set(FrameBox, AppSettings.DefaultToggleFrame);
         ErrorText.Visibility = Visibility.Collapsed;
     }
 
     private void OnSave(object sender, RoutedEventArgs e)
     {
-        if (_keys.Values.Distinct().Count() < 3)
+        if (_keys.Values.Distinct().Count() < _keys.Count)
         {
             ShowError("Each action needs its own key combination.");
             return;

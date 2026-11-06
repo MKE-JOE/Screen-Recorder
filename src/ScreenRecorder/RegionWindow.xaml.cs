@@ -18,6 +18,8 @@ public partial class RegionWindow : Window
     private IntPtr _hwnd;
 
     public event EventHandler? CaptureRectChanged;
+    public event Action? HotkeysRequested, HideRequested;
+    private RECT _lastRect;
 
     public RegionWindow()
     {
@@ -37,6 +39,7 @@ public partial class RegionWindow : Window
     {
         if (!IsLoaded) return;
         var r = GetCaptureRect();
+        _lastRect = r;
         SizeText.Text = $"{r.Width} × {r.Height}";
         CaptureRectChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -44,7 +47,8 @@ public partial class RegionWindow : Window
     /// <summary>The recorded rectangle in physical screen pixels.</summary>
     public RECT GetCaptureRect()
     {
-        if (PresentationSource.FromVisual(CaptureArea) == null) return default;
+        if (!IsVisible && _lastRect.Width > 0) return _lastRect;   // hidden: keep recording the same area
+        if (PresentationSource.FromVisual(CaptureArea) == null) return _lastRect;
         var tl = CaptureArea.PointToScreen(new Point(0, 0));
         var br = CaptureArea.PointToScreen(new Point(CaptureArea.ActualWidth, CaptureArea.ActualHeight));
         return new RECT((int)Math.Round(tl.X), (int)Math.Round(tl.Y), (int)Math.Round(br.X), (int)Math.Round(br.Y));
@@ -67,6 +71,7 @@ public partial class RegionWindow : Window
     public void SetRecording(bool recording)
     {
         Handles.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
+        ToolPill.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
         InfoPill.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
         CaptureArea.Background = recording ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(0x18, 0x25, 0x63, 0xEB));
         var c = recording ? Color.FromRgb(0xE5, 0x48, 0x4D) : Color.FromRgb(0x25, 0x63, 0xEB);
@@ -75,6 +80,9 @@ public partial class RegionWindow : Window
         IsHitTestVisible = !recording;
         WindowHelpers.SetExStyle(_hwnd, NativeMethods.WS_EX_TRANSPARENT, recording);
     }
+
+    private void OnHotkeys(object sender, RoutedEventArgs e) => HotkeysRequested?.Invoke();
+    private void OnHide(object sender, RoutedEventArgs e) => HideRequested?.Invoke();
 
     private void OnDragMove(object sender, MouseButtonEventArgs e)
     {

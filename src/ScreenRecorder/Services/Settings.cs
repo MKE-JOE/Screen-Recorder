@@ -36,10 +36,12 @@ public sealed class AppSettings
     public static readonly Hotkey DefaultRecord = new(CtrlAlt, 0x52); // R
     public static readonly Hotkey DefaultPause = new(CtrlAlt, 0x50);  // P
     public static readonly Hotkey DefaultStop = new(CtrlAlt, 0x51);   // Q
+    public static readonly Hotkey DefaultToggleFrame = new(CtrlAlt, 0x48); // H
 
     public Hotkey RecordKey { get; set; } = DefaultRecord;
     public Hotkey PauseKey { get; set; } = DefaultPause;
     public Hotkey StopKey { get; set; } = DefaultStop;
+    public Hotkey ToggleFrameKey { get; set; } = DefaultToggleFrame;
 
     private static string FilePath => Path.Combine(Ffmpeg.AppDataDir, "settings.json");
 
