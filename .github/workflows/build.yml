@@ -76,6 +76,15 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Self-test failed with exit code $($p.ExitCode)" }
           Remove-Item publish/selftest.log
 
+      - name: Self-test the GIF editor (load frames, text, crop, boomerang, reduce, undo/redo, export)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-gif', "$PWD/smoke/src.mp4", "$PWD/smoke/editor.gif" -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "GIF editor self-test hung" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "GIF editor self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
       - uses: actions/upload-artifact@v4
         with:
           name: ScreenRecorder-1.0.${{ github.run_number }}

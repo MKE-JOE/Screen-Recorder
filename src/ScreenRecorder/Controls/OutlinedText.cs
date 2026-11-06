@@ -28,10 +28,21 @@ public sealed class OutlinedText : FrameworkElement
     /// <summary>Outline width outside the glyphs, like drawtext's borderw.</summary>
     public double StrokeThickness { get => (double)GetValue(StrokeThicknessProperty); set => SetValue(StrokeThicknessProperty, value); }
 
-    private FormattedText Format() => new(
-        string.IsNullOrEmpty(Text) ? " " : Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-        new Typeface(FontFamily, FontStyles.Normal, FontWeight, FontStretches.Normal),
-        Math.Max(1, FontSize), Fill, 1.0);
+    private FormattedText Format() => Create(Text, FontFamily, FontWeight, FontSize, Fill);
+
+    public static FormattedText Create(string text, FontFamily family, FontWeight weight, double size, Brush fill) => new(
+        string.IsNullOrEmpty(text) ? " " : text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+        new Typeface(family, FontStyles.Normal, weight, FontStretches.Normal),
+        Math.Max(1, size), fill, 1.0);
+
+    /// <summary>Draws outlined text the same way the preview control does (used when rendering GIF frames).</summary>
+    public static void Draw(DrawingContext dc, FormattedText ft, Point origin, Brush fill, Brush stroke, double strokeThickness)
+    {
+        var geo = ft.BuildGeometry(origin);
+        if (strokeThickness > 0)
+            dc.DrawGeometry(null, new Pen(stroke, strokeThickness * 2) { LineJoin = PenLineJoin.Round }, geo);
+        dc.DrawGeometry(fill, null, geo);
+    }
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -41,13 +52,6 @@ public sealed class OutlinedText : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        var ft = Format();
-        var geo = ft.BuildGeometry(new Point(0, 0));
-        if (StrokeThickness > 0)
-        {
-            var pen = new Pen(Stroke, StrokeThickness * 2) { LineJoin = PenLineJoin.Round };
-            dc.DrawGeometry(null, pen, geo);
-        }
-        dc.DrawGeometry(Fill, null, geo);
+        Draw(dc, Format(), new Point(0, 0), Fill, Stroke, StrokeThickness);
     }
 }

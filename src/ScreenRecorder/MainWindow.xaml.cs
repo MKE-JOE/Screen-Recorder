@@ -111,6 +111,12 @@ public partial class MainWindow : Window
             await Ffmpeg.EnsureAsync();
             _ffmpegReady = true;
             SetStatus("Ready");
+            if (App.SelfTestGif is (string gifIn, string gifOut))
+            {
+                new GifEditor.GifEditorWindow(new GifEditor.GifEditorOptions { Input = gifIn, Start = 0.5, Length = 3, Fps = 15, Width = 320, SourceWidth = 640 })
+                { Owner = this, SelfTestOutput = gifOut }.Show();
+                return;
+            }
             if (App.SelfTest)
             {
                 var displays = Displays.GetAll();
@@ -599,6 +605,7 @@ public partial class MainWindow : Window
     private void OnFormatChanged(object sender, RoutedEventArgs e)
     {
         if (GifOptions != null) GifOptions.Visibility = FmtGif.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        if (ExportButton != null) ExportButton.Content = FmtGif.IsChecked == true ? "Open GIF editor…" : "Export…";
     }
 
     private async void OnExport(object sender, RoutedEventArgs e)
@@ -608,10 +615,11 @@ public partial class MainWindow : Window
         string ext = fmt switch { ExportFormat.Gif => "gif", ExportFormat.Mkv => "mkv", _ => "mp4" };
         double length = _trimEnd - _trimStart;
 
-        if (fmt == ExportFormat.Gif && length > 60 &&
-            MessageBox.Show(this, $"This GIF will be {Fmt(length)} long, which can make a very large file. Continue?",
-                "Export GIF", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        if (fmt == ExportFormat.Gif)
+        {
+            OpenGifEditor(length);
             return;
+        }
 
         var dlg = new SaveFileDialog
         {
@@ -675,6 +683,31 @@ public partial class MainWindow : Window
             _mode = Mode.Idle;
             UpdateUi();
         }
+    }
+
+    private void OpenGifEditor(double length)
+    {
+        if (length > GifEditor.GifRenderer.MaxSeconds + 0.05 &&
+            MessageBox.Show(this, $"GIFs are limited to 15 seconds and your selection is {Fmt(length)}.\n\n" +
+                $"The editor will load {Fmt(_trimStart)} to {Fmt(_trimStart + GifEditor.GifRenderer.MaxSeconds)}. " +
+                "To use a different part, set the trim start first.", "GIF Editor", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
+            return;
+
+        PausePlayback();
+        RefreshOverlay();
+        var editor = new GifEditor.GifEditorWindow(new GifEditor.GifEditorOptions
+        {
+            Input = _videoPath!,
+            Start = _trimStart,
+            Length = Math.Min(length, GifEditor.GifRenderer.MaxSeconds),
+            Fps = int.Parse((string)((ComboBoxItem)GifFpsCombo.SelectedItem).Tag),
+            Width = int.Parse((string)((ComboBoxItem)GifWidthCombo.SelectedItem).Tag),
+            SourceWidth = _videoW,
+            InitialText = _overlay.IsEmpty ? null : _overlay,
+            SuggestedName = Path.GetFileNameWithoutExtension(_videoPath) + ".gif",
+        })
+        { Owner = this };
+        editor.Show();
     }
 
     private void OnCancelExport(object sender, RoutedEventArgs e) => _exportCts?.Cancel();

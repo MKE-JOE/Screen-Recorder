@@ -179,7 +179,7 @@
             <!-- Text overlay -->
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Style="{StaticResource CardTitle}" Text="Add text (for GIFs)"/>
+                    <TextBlock Style="{StaticResource CardTitle}" Text="Add text"/>
                     <TextBox x:Name="OverlayInput" Height="48" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                              Padding="4" TextChanged="OnOverlayChanged"/>
                     <Grid Margin="0,8,0,0">
@@ -216,7 +216,7 @@
                         <CheckBox x:Name="CenterCheck" Content="Center horizontally" IsChecked="True" VerticalAlignment="Center"
                                   Checked="OnOverlayChanged" Unchecked="OnOverlayChanged"/>
                     </WrapPanel>
-                    <CheckBox x:Name="TextOnVideoCheck" Margin="0,8,0,0" Content="Also add the text to MP4 / MKV exports"/>
+                    <CheckBox x:Name="TextOnVideoCheck" Margin="0,8,0,0" Content="Also burn it into MP4 / MKV exports"/>
                     <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
                                Text="Drag the text on the preview to move it."/>
                 </StackPanel>

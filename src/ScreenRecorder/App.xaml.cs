@@ -10,10 +10,14 @@ public partial class App : Application
     /// Exit code 0 means the app starts cleanly; CI runs this on every build.
     /// </summary>
     public static bool SelfTest { get; private set; }
+    /// <summary>"--selftest-gif &lt;video&gt; &lt;out.gif&gt;": open the GIF editor on a video, edit, export, exit.</summary>
+    public static (string Input, string Output)? SelfTestGif { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        SelfTest = e.Args.Contains("--selftest");
+        SelfTest = e.Args.Contains("--selftest") || e.Args.Contains("--selftest-gif");
+        int gi = Array.IndexOf(e.Args, "--selftest-gif");
+        if (gi >= 0 && gi + 2 < e.Args.Length) SelfTestGif = (Path.GetFullPath(e.Args[gi + 1]), Path.GetFullPath(e.Args[gi + 2]));
         DispatcherUnhandledException += OnUnhandled;
         AppDomain.CurrentDomain.UnhandledException += (_, a) => { if (SelfTest) Fail(a.ExceptionObject?.ToString()); };
         base.OnStartup(e);
