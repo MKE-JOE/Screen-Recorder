@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest $env:FFMPEG_URL -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-tmp
+          $exe = Get-ChildItem ffmpeg-tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $exe.FullName src/FfmpegPayload/Assets/ffmpeg.exe
+
+      - name: Check FFmpeg has everything the app uses
+        shell: pwsh
+        run: |
+          $ff = "src/FfmpegPayload/Assets/ffmpeg.exe"
+          $filters = (& $ff -hide_banner -filters) -join "`n"
+          foreach ($n in 'ddagrab','hwdownload','drawtext','palettegen','paletteuse','amix','alimiter','aresample') {
+            if ($filters -notmatch "\s$n\s") { throw "FFmpeg is missing filter $n" }
+          }
+          $enc = (& $ff -hide_banner -encoders) -join "`n"
+          foreach ($n in 'libx264','aac','gif') { if ($enc -notmatch "\s$n\s") { throw "FFmpeg is missing encoder $n" } }
+          $dev = (& $ff -hide_banner -devices) -join "`n"
+          if ($dev -notmatch 'gdigrab') { throw "FFmpeg is missing gdigrab" }
+
+      - name: Smoke-test the export pipeline
+        shell: pwsh
+        run: |
+          $ff = "src/FfmpegPayload/Assets/ffmpeg.exe"
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          Set-Location smoke
+          & "../$ff" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 4 -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 320k src.mp4
+          Copy-Item C:\Windows\Fonts\impact.ttf font.ttf
+          Set-Content overlay.txt "Hello" -NoNewline
+          $dt = "drawtext=fontfile=font.ttf:textfile=overlay.txt:expansion=none:fontsize=48:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=20:y_align=font:borderw=3:bordercolor=0x000000"
+          & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -vf "$dt,fps=15,scale=320:-2:flags=lanczos,palettegen=stats_mode=diff" -frames:v 1 -update 1 palette.png
+          & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -i palette.png -filter_complex "[0:v]$dt,fps=15,scale=320:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle[out]" -map "[out]" -loop 0 out.gif
+          if (-not (Test-Path out.gif) -or (Get-Item out.gif).Length -lt 1000) { throw "GIF export failed" }
+          & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -map 0:v:0 -map 0:a? -vf $dt -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 320k out.mkv
+          if (-not (Test-Path out.mkv)) { throw "MKV export failed" }
+
+      - name: Publish single-file exe
+        run: dotnet publish src/ScreenRecorder/ScreenRecorder.csproj -c Release -o publish -p:Version=1.0.${{ github.run_number }}
+
+      - name: Show output
+        shell: pwsh
+        run: Get-ChildItem publish | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenRecorder-1.0.${{ github.run_number }}
+          path: publish/ScreenRecorder.exe
+
+      - name: Create release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Screen Recorder 1.0.${{ github.run_number }}
+          body: Download **ScreenRecorder.exe** below and run it. No install needed (Windows 10/11, 64-bit).
+          files: publish/ScreenRecorder.exe
