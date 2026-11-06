@@ -1,0 +1,39 @@
+<Window x:Class="ScreenRecorder.HotkeyDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Hotkeys" SizeToContent="WidthAndHeight" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{StaticResource WindowBg}" FontFamily="Segoe UI" FontSize="13">
+    <StackPanel Margin="18" Width="380">
+        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TextMuted}" Margin="0,0,0,12"
+                   Text="Click a box, then press the key combination you want. Use at least one of Ctrl, Alt, Shift or Win (F1 to F24 work on their own)."/>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="110"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="8"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Style="{StaticResource Label}" Text="Record"/>
+            <TextBox x:Name="RecordBox" Grid.Column="1" IsReadOnly="True" Padding="6,4" Cursor="Hand"
+                     PreviewKeyDown="OnCapture" GotKeyboardFocus="OnFocus" LostKeyboardFocus="OnBlur"/>
+            <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="Pause / resume"/>
+            <TextBox x:Name="PauseBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True" Padding="6,4" Cursor="Hand"
+                     PreviewKeyDown="OnCapture" GotKeyboardFocus="OnFocus" LostKeyboardFocus="OnBlur"/>
+            <TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="Stop and save"/>
+            <TextBox x:Name="StopBox" Grid.Row="4" Grid.Column="1" IsReadOnly="True" Padding="6,4" Cursor="Hand"
+                     PreviewKeyDown="OnCapture" GotKeyboardFocus="OnFocus" LostKeyboardFocus="OnBlur"/>
+        </Grid>
+        <TextBlock x:Name="ErrorText" Foreground="#C0262D" TextWrapping="Wrap" Margin="0,10,0,0" Visibility="Collapsed"/>
+        <DockPanel Margin="0,16,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Left" Content="Reset to defaults" Click="OnReset"/>
+            <Button DockPanel.Dock="Right" Content="Cancel" IsCancel="True" Margin="8,0,0,0" Width="80"/>
+            <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="Save" Width="80" Click="OnSave"/>
+        </DockPanel>
+    </StackPanel>
+</Window>

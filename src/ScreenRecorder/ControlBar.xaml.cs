@@ -31,6 +31,13 @@ public partial class ControlBar : Window
         };
     }
 
+    public void SetHotkeyHints(string record, string pause, string stop)
+    {
+        RecordBtn.ToolTip = $"Record ({record})";
+        PauseBtn.ToolTip = $"Pause / resume ({pause})";
+        StopBtn.ToolTip = $"Stop and save ({stop})";
+    }
+
     public void SetState(bool canRecord, bool canPause, bool canStop, bool live, bool paused, string time)
     {
         RecordBtn.IsEnabled = canRecord;

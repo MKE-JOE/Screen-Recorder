@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     private readonly RegionWindow _region = new();
     private readonly ControlBar _bar = new();
     private const int HotkeyRecord = 1, HotkeyPause = 2, HotkeyStop = 3;
+    private readonly AppSettings _settings = AppSettings.Load();
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly TextOverlay _overlay = new();
     private Mode _mode = Mode.Idle;
@@ -71,7 +72,11 @@ public partial class MainWindow : Window
         ColorCombo.SelectedIndex = 0;
 
         Loaded += OnLoaded;
-        SourceInitialized += (_, _) => RegisterHotkeys();
+        SourceInitialized += (_, _) =>
+        {
+            HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
+            RegisterHotkeys();
+        };
         _bar.RecordRequested += () =>
         {
             if (_mode == Mode.Idle) OnRecord(this, new RoutedEventArgs());
@@ -735,15 +740,39 @@ public partial class MainWindow : Window
     private void RegisterHotkeys()
     {
         var hwnd = new WindowInteropHelper(this).Handle;
-        HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
-        const uint mods = NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_NOREPEAT;
+        UnregisterHotkeys();
         var failed = new List<string>();
-        if (!NativeMethods.RegisterHotKey(hwnd, HotkeyRecord, mods, 0x52)) failed.Add("Ctrl+Alt+R");
-        if (!NativeMethods.RegisterHotKey(hwnd, HotkeyPause, mods, 0x50)) failed.Add("Ctrl+Alt+P");
-        if (!NativeMethods.RegisterHotKey(hwnd, HotkeyStop, mods, 0x53)) failed.Add("Ctrl+Alt+S");
+        foreach (var (id, key) in new[] { (HotkeyRecord, _settings.RecordKey), (HotkeyPause, _settings.PauseKey), (HotkeyStop, _settings.StopKey) })
+        {
+            if (!NativeMethods.RegisterHotKey(hwnd, id, key.Modifiers | NativeMethods.MOD_NOREPEAT, key.VirtualKey))
+                failed.Add(key.ToString());
+        }
         HotkeyText.Text = failed.Count == 0
-            ? "Hotkeys: Ctrl+Alt+R record · Ctrl+Alt+P pause · Ctrl+Alt+S stop"
-            : "Hotkeys in use by another app: " + string.Join(", ", failed);
+            ? $"Hotkeys: {_settings.RecordKey} record · {_settings.PauseKey} pause · {_settings.StopKey} stop"
+            : "In use by another app, pick others: " + string.Join(", ", failed);
+        HotkeyText.Foreground = failed.Count == 0 ? (Brush)FindResource("TextMuted") : new SolidColorBrush(Color.FromRgb(0xC0, 0x26, 0x2D));
+        _bar.SetHotkeyHints(_settings.RecordKey.ToString(), _settings.PauseKey.ToString(), _settings.StopKey.ToString());
+    }
+
+    private void UnregisterHotkeys()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        foreach (int id in new[] { HotkeyRecord, HotkeyPause, HotkeyStop }) NativeMethods.UnregisterHotKey(hwnd, id);
+    }
+
+    private void OnChangeHotkeys(object sender, RoutedEventArgs e)
+    {
+        // Release the current keys so they can be pressed in the dialog without triggering anything.
+        UnregisterHotkeys();
+        var dlg = new HotkeyDialog(_settings) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _settings.RecordKey = dlg.RecordKey;
+            _settings.PauseKey = dlg.PauseKey;
+            _settings.StopKey = dlg.StopKey;
+            _settings.Save();
+        }
+        RegisterHotkeys();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -811,8 +840,7 @@ public partial class MainWindow : Window
         Media.Close();
         _region.Close();
         _bar.Close();
-        var hwnd = new WindowInteropHelper(this).Handle;
-        foreach (int id in new[] { HotkeyRecord, HotkeyPause, HotkeyStop }) NativeMethods.UnregisterHotKey(hwnd, id);
+        UnregisterHotkeys();
     }
 
     private static string Fmt(double seconds)

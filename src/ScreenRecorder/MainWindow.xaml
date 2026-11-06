@@ -124,8 +124,11 @@
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
                         <TextBlock x:Name="StatusText" HorizontalAlignment="Right"
                                    Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis" Text="Ready"/>
-                        <TextBlock x:Name="HotkeyText" HorizontalAlignment="Right" FontSize="11" Margin="0,3,0,0"
-                                   Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,3,0,0">
+                            <TextBlock x:Name="HotkeyText" FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextMuted}" TextTrimming="CharacterEllipsis"/>
+                            <Button Content="Change…" FontSize="11" Padding="6,1" Margin="6,0,0,0" Click="OnChangeHotkeys"/>
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
             </StackPanel>

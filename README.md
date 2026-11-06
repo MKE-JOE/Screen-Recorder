@@ -8,7 +8,7 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
 - **3-second countdown** before recording starts. Recording runs for up to **2 hours** and stops and saves automatically when it hits the limit.
 - **Record, Play, Pause, Stop, Rewind and Fast-forward** buttons. Pause works during recording too.
 - **Stays out of the way:** the main window minimizes while you record. A small floating bar, which you can drag anywhere and which never appears in the recording, has Record, Pause and Stop and shows the timer.
-- **Global hotkeys** (work from any app): **Ctrl+Alt+R** record, **Ctrl+Alt+P** pause/resume, **Ctrl+Alt+S** stop and save.
+- **Global hotkeys** (work from any app): **Ctrl+Alt+R** record, **Ctrl+Alt+P** pause/resume, **Ctrl+Alt+Q** stop and save. Click **Change…** next to the hotkey list to pick your own; they're saved in `%LOCALAPPDATA%\PortableScreenRecorder\settings.json`.
 - **Audio:** records whatever plays on your default playback device. You can pick any other output device from the dropdown, and optionally mix in a microphone.
 - **Quality:**
   - Video: H.264 at the full resolution of the area, 30 or 60 fps, near-lossless (CRF 18).
