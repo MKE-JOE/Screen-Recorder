@@ -18,7 +18,7 @@ public partial class RegionWindow : Window
     private IntPtr _hwnd;
 
     public event EventHandler? CaptureRectChanged;
-    public event Action? HotkeysRequested, HideRequested;
+    public event Action? HideRequested;
     private RECT _lastRect;
 
     public RegionWindow()
@@ -67,6 +67,9 @@ public partial class RegionWindow : Window
         if (Top < wa.Top - BandDip) Top = wa.Top - BandDip;
     }
 
+    public void SetHotkeyHints(string record, string pause, string stop, string frame) =>
+        HotkeysText.Text = $"Record {record}  ·  Pause {pause}  ·  Stop {stop}  ·  Hide/show frame {frame}";
+
     /// <summary>While recording the frame turns red and becomes click-through.</summary>
     public void SetRecording(bool recording)
     {
@@ -81,7 +84,6 @@ public partial class RegionWindow : Window
         WindowHelpers.SetExStyle(_hwnd, NativeMethods.WS_EX_TRANSPARENT, recording);
     }
 
-    private void OnHotkeys(object sender, RoutedEventArgs e) => HotkeysRequested?.Invoke();
     private void OnHide(object sender, RoutedEventArgs e) => HideRequested?.Invoke();
 
     private void OnDragMove(object sender, MouseButtonEventArgs e)

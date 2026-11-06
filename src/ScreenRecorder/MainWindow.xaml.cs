@@ -87,7 +87,6 @@ public partial class MainWindow : Window
         _bar.StopRequested += () => { if (_mode is Mode.Countdown or Mode.Recording or Mode.Paused) OnStop(this, new RoutedEventArgs()); };
         _bar.ShowAppRequested += RestoreMainWindow;
         _bar.ToggleFrameRequested += ToggleFrame;
-        _region.HotkeysRequested += () => OnChangeHotkeys(this, new RoutedEventArgs());
         _region.HideRequested += ToggleFrame;
         Closing += OnClosing;
     }
@@ -790,6 +789,7 @@ public partial class MainWindow : Window
             : "In use by another app, pick others: " + string.Join(", ", failed);
         HotkeyText.Foreground = failed.Count == 0 ? (Brush)FindResource("TextMuted") : new SolidColorBrush(Color.FromRgb(0xC0, 0x26, 0x2D));
         _bar.SetHotkeyHints(_settings.RecordKey.ToString(), _settings.PauseKey.ToString(), _settings.StopKey.ToString(), _settings.ToggleFrameKey.ToString());
+        _region.SetHotkeyHints(_settings.RecordKey.ToString(), _settings.PauseKey.ToString(), _settings.StopKey.ToString(), _settings.ToggleFrameKey.ToString());
     }
 
     private void UnregisterHotkeys()
@@ -802,7 +802,8 @@ public partial class MainWindow : Window
     {
         // Release the current keys so they can be pressed in the dialog without triggering anything.
         UnregisterHotkeys();
-        var dlg = new HotkeyDialog(_settings) { Owner = this };
+        RestoreMainWindow();
+        var dlg = new HotkeyDialog(_settings) { Owner = this, Topmost = true };   // never hidden behind the capture frame
         if (dlg.ShowDialog() == true)
         {
             _settings.RecordKey = dlg.RecordKey;
