@@ -41,6 +41,8 @@ public partial class MainWindow : Window
     };
 
     private readonly RegionWindow _region = new();
+    private readonly ControlBar _bar = new();
+    private const int HotkeyRecord = 1, HotkeyPause = 2, HotkeyStop = 3;
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly TextOverlay _overlay = new();
     private Mode _mode = Mode.Idle;
@@ -69,6 +71,15 @@ public partial class MainWindow : Window
         ColorCombo.SelectedIndex = 0;
 
         Loaded += OnLoaded;
+        SourceInitialized += (_, _) => RegisterHotkeys();
+        _bar.RecordRequested += () =>
+        {
+            if (_mode == Mode.Idle) OnRecord(this, new RoutedEventArgs());
+            else if (_mode == Mode.Paused) OnPause(this, new RoutedEventArgs());
+        };
+        _bar.PauseRequested += () => { if (_mode is Mode.Recording or Mode.Paused) OnPause(this, new RoutedEventArgs()); };
+        _bar.StopRequested += () => { if (_mode is Mode.Countdown or Mode.Recording or Mode.Paused) OnStop(this, new RoutedEventArgs()); };
+        _bar.ShowAppRequested += RestoreMainWindow;
         Closing += OnClosing;
     }
 
@@ -79,6 +90,7 @@ public partial class MainWindow : Window
         _region.Owner = null;
         _region.Show();
         _region.SetCaptureSize(1280, 720);
+        _bar.Show();
         LoadDisplays();
         await LoadAudioDevicesAsync();
         _tick.Start();
@@ -195,6 +207,7 @@ public partial class MainWindow : Window
         if (AreaMode) _region.SetRecording(true);
         WindowHelpers.ExcludeFromCapture(new WindowInteropHelper(this).Handle, true);
         SetStatus("Get ready…");
+        if (MinimizeCheck.IsChecked == true) WindowState = WindowState.Minimized;
         UpdateUi();
 
         _countdownCts = new CancellationTokenSource();
@@ -261,6 +274,7 @@ public partial class MainWindow : Window
     {
         _mode = Mode.Idle;
         _region.SetRecording(false);
+        RestoreMainWindow();
         WindowHelpers.ExcludeFromCapture(new WindowInteropHelper(this).Handle, false);
         SetStatus(status);
         UpdateUi();
@@ -429,6 +443,7 @@ public partial class MainWindow : Window
         {
             var t = _recorder.Elapsed;
             TimerText.Text = t.ToString(@"hh\:mm\:ss");
+            UpdateBar();
             RecBadgeText.Text = (_mode == Mode.Paused ? "PAUSED " : "REC ") + t.ToString(@"hh\:mm\:ss");
             RecDot.Opacity = _mode == Mode.Paused ? 0.3 : (DateTime.Now.Millisecond < 500 ? 1 : 0.35);
             if (_mode == Mode.Recording && t >= Recorder.MaxDuration)
@@ -710,9 +725,71 @@ public partial class MainWindow : Window
             Placeholder.Visibility = hasVideo ? Visibility.Collapsed : Visibility.Visible;
         }
         if (!recording && _recorder == null) TimerText.Text = "00:00:00";
+        UpdateBar();
     }
 
     private void SetStatus(string text) => StatusText.Text = text;
+
+    // ------------------------------------------------------------------ hotkeys + floating bar
+
+    private void RegisterHotkeys()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+        const uint mods = NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_NOREPEAT;
+        var failed = new List<string>();
+        if (!NativeMethods.RegisterHotKey(hwnd, HotkeyRecord, mods, 0x52)) failed.Add("Ctrl+Alt+R");
+        if (!NativeMethods.RegisterHotKey(hwnd, HotkeyPause, mods, 0x50)) failed.Add("Ctrl+Alt+P");
+        if (!NativeMethods.RegisterHotKey(hwnd, HotkeyStop, mods, 0x53)) failed.Add("Ctrl+Alt+S");
+        HotkeyText.Text = failed.Count == 0
+            ? "Hotkeys: Ctrl+Alt+R record · Ctrl+Alt+P pause · Ctrl+Alt+S stop"
+            : "Hotkeys in use by another app: " + string.Join(", ", failed);
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg != NativeMethods.WM_HOTKEY) return IntPtr.Zero;
+        handled = true;
+        switch (wParam.ToInt32())
+        {
+            case HotkeyRecord:
+                if (_mode == Mode.Idle) OnRecord(this, new RoutedEventArgs());
+                else if (_mode == Mode.Paused) OnPause(this, new RoutedEventArgs());
+                break;
+            case HotkeyPause:
+                if (_mode is Mode.Recording or Mode.Paused) OnPause(this, new RoutedEventArgs());
+                break;
+            case HotkeyStop:
+                if (_mode is Mode.Countdown or Mode.Recording or Mode.Paused) OnStop(this, new RoutedEventArgs());
+                break;
+        }
+        return IntPtr.Zero;
+    }
+
+    private void RestoreMainWindow()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show();
+        Activate();
+    }
+
+    private void UpdateBar()
+    {
+        bool live = _mode is Mode.Recording or Mode.Paused or Mode.Finishing;
+        string time = _mode switch
+        {
+            Mode.Countdown => "Starting",
+            Mode.Finishing => "Saving…",
+            Mode.Exporting => "Exporting",
+            _ when live && _recorder != null => _recorder.Elapsed.ToString(@"hh\:mm\:ss"),
+            _ => _ffmpegReady ? "Ready" : "Wait…",
+        };
+        _bar.SetState(
+            canRecord: (_mode == Mode.Idle && _ffmpegReady) || _mode == Mode.Paused,
+            canPause: _mode is Mode.Recording or Mode.Paused,
+            canStop: _mode is Mode.Countdown or Mode.Recording or Mode.Paused,
+            live: live, paused: _mode == Mode.Paused, time: time);
+    }
 
     private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -733,6 +810,9 @@ public partial class MainWindow : Window
         _countdownCts?.Cancel();
         Media.Close();
         _region.Close();
+        _bar.Close();
+        var hwnd = new WindowInteropHelper(this).Handle;
+        foreach (int id in new[] { HotkeyRecord, HotkeyPause, HotkeyStop }) NativeMethods.UnregisterHotKey(hwnd, id);
     }
 
     private static string Fmt(double seconds)

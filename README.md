@@ -7,6 +7,8 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
 - **Capture area:** a frame you can drag anywhere on the screen and resize from its edges or corners. You can also pick a size preset or record a whole display.
 - **3-second countdown** before recording starts. Recording runs for up to **2 hours** and stops and saves automatically when it hits the limit.
 - **Record, Play, Pause, Stop, Rewind and Fast-forward** buttons. Pause works during recording too.
+- **Stays out of the way:** the main window minimizes while you record. A small floating bar, which you can drag anywhere and which never appears in the recording, has Record, Pause and Stop and shows the timer.
+- **Global hotkeys** (work from any app): **Ctrl+Alt+R** record, **Ctrl+Alt+P** pause/resume, **Ctrl+Alt+S** stop and save.
 - **Audio:** records whatever plays on your default playback device. You can pick any other output device from the dropdown, and optionally mix in a microphone.
 - **Quality:**
   - Video: H.264 at the full resolution of the area, 30 or 60 fps, near-lossless (CRF 18).
@@ -15,7 +17,7 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
 - **Add text:** type text, pick a font, size and colour, and drag it into place on the preview. It's burned into GIF exports, and into MP4/MKV too if you tick the box.
 - **Export** to **MP4, MKV or GIF**. GIFs use a two-pass, optimised palette, and you can choose their width and frame rate.
 
-The capture frame, countdown and app window are hidden from the recording on Windows 10 version 2004 and later.
+The capture frame, countdown, floating bar and app window are hidden from the recording on Windows 10 version 2004 and later.
 
 ## Download
 
