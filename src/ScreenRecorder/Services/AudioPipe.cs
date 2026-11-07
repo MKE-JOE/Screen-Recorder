@@ -113,6 +113,8 @@ public sealed class AudioPipe : IDisposable
     public IEnumerable<string> InputArgs(double timeOrigin) => new[]
     {
         "-thread_queue_size", "4096",
+        // The format is given, so FFmpeg needn't study seconds of audio before starting: that stalled the video.
+        "-probesize", "32", "-analyzeduration", "0",
         "-f", SampleFormat, "-ar", SampleRate.ToString(), "-ac", Channels.ToString(),
         "-i", PipePath,
     };

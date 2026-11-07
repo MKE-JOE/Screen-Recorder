@@ -91,6 +91,7 @@ public sealed class Recorder : IAsyncDisposable
         for (int i = 0; i < parts.Count; i++)
         {
             double lead = await VideoStartAsync(parts[i]);
+            try { File.AppendAllText(LogPath, $"--- part {i}: video starts {lead:0.000} s after audio{Environment.NewLine}"); } catch { }
             if (lead < 0.02) continue;
             string trimmed = Path.ChangeExtension(parts[i], ".trim.mkv");
             try
@@ -114,6 +115,8 @@ public sealed class Recorder : IAsyncDisposable
             "-map", "0", "-c", "copy", "-movflags", "+faststart", outputPath,
         }, _workDir, 0, null, CancellationToken.None);
 
+        // Keep the log of the last recording for troubleshooting (the work folder is deleted).
+        try { File.Copy(LogPath, Path.Combine(Ffmpeg.AppDataDir, "last-recording-ffmpeg.log"), true); } catch { }
         try { Directory.Delete(_workDir, true); } catch { }
         return outputPath;
     }
@@ -172,6 +175,9 @@ public sealed class Recorder : IAsyncDisposable
         var args = BuildArgs(seg, origin);
 
         _firstFrame = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_log) _log.AppendLine($"--- {DateTime.Now:HH:mm:ss.fff} segment {_segments.Count}: ffmpeg " +
+            string.Join(' ', args.Select(x => x.Contains(' ') || x.Contains(';') ? "\"" + x + "\"" : x)));
+        var launched = Stopwatch.StartNew();
         _ffmpeg = Ffmpeg.Start(args, _workDir);
         _ffmpeg.EnableRaisingEvents = true;
         Native.Performance.DisableThrottling(_ffmpeg);
@@ -196,6 +202,7 @@ public sealed class Recorder : IAsyncDisposable
             throw new InvalidOperationException("Could not start screen capture." + Environment.NewLine + TailLog());
         }
 
+        lock (_log) _log.AppendLine($"--- first frame after {launched.Elapsed.TotalSeconds:0.00} s");
         _segments.Add(seg);
         _segmentClock.Restart();
     }
