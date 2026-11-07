@@ -30,7 +30,7 @@ public partial class App : Application
     private static void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         if (SelfTest) Fail(e.Exception.ToString());
-        MessageBox.Show(e.Exception.Message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
+        MessageBox.Show(e.Exception.Message, "ScreenGank", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }
 

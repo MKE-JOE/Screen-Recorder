@@ -42,7 +42,7 @@ public sealed class AppSettings
     public Hotkey PauseKey { get; set; } = DefaultPause;
     public Hotkey StopKey { get; set; } = DefaultStop;
     public Hotkey ToggleFrameKey { get; set; } = DefaultToggleFrame;
-    /// <summary>Save each recording to Videos\Screen Recorder when it stops. Off: it waits in a temp folder until exported.</summary>
+    /// <summary>Save each recording to Videos\ScreenGank when it stops. Off: it waits in a temp folder until exported.</summary>
     public bool AutoSave { get; set; }
 
     private static string FilePath => Path.Combine(Ffmpeg.AppDataDir, "settings.json");

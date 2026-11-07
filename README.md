@@ -1,6 +1,6 @@
-# Screen Recorder
+# ScreenGank
 
-A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRecorder.exe`: no installer and no .NET runtime needed.
+A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenGank.exe`: no installer and no .NET runtime needed.
 
 ## Features
 
@@ -36,14 +36,14 @@ The capture frame, countdown, floating bar and app window are hidden from the re
 
 ## Download
 
-Get `ScreenRecorder.exe` from the latest release on the [Releases](../../releases) page and run it.
+Get `ScreenGank.exe` from the latest release on the [Releases](../../releases) page and run it.
 
 ## Where files go
 
-- **Recordings:** with **Autosave after Stop** ticked, each recording is saved to `Videos\Screen Recorder\Recording <date time>.mp4`. Unticked (the default), the clip opens in the app unsaved, kept in `%LOCALAPPDATA%\PortableScreenRecorder\Unsaved`; export it to keep it. The temp copy is deleted when you start a new recording, open another video or close the app, and the app asks first if you never exported it.
+- **Recordings:** with **Autosave after Stop** ticked, each recording is saved to `Videos\ScreenGank\Recording <date time>.mp4`. Unticked (the default), the clip opens in the app unsaved, kept in `%LOCALAPPDATA%\PortableScreenRecorder\Unsaved`; export it to keep it. The temp copy is deleted when you start a new recording, open another video or close the app, and the app asks first if you never exported it.
 - **Exports:** wherever you choose in the Save dialog.
 - **Smoothness report:** `%LOCALAPPDATA%\PortableScreenRecorder\last-recording.txt`, overwritten after each recording.
-- **Encoder:** on first launch the app unpacks its built-in encoder (FFmpeg, about 85 MB) once into `%LOCALAPPDATA%\PortableScreenRecorder`. Delete that folder to remove every trace. If you put an `ffmpeg.exe` next to `ScreenRecorder.exe`, the app uses that one instead.
+- **Encoder:** on first launch the app unpacks its built-in encoder (FFmpeg, about 85 MB) once into `%LOCALAPPDATA%\PortableScreenRecorder`. Delete that folder to remove every trace. If you put an `ffmpeg.exe` next to `ScreenGank.exe`, the app uses that one instead.
 
 ## How it works
 
@@ -62,7 +62,7 @@ GitHub Actions builds the exe on every push. See `.github/workflows/build.yml`. 
 #    src\FfmpegPayload\Assets\ffmpeg.exe
 # 2. Publish:
 dotnet publish src\ScreenRecorder\ScreenRecorder.csproj -c Release -o publish
-# -> publish\ScreenRecorder.exe
+# -> publish\ScreenGank.exe
 ```
 
 Requires the .NET 8 SDK.

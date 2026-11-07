@@ -40,7 +40,7 @@ public static class Ffmpeg
         Directory.CreateDirectory(dir);
         var payload = Assembly.Load(new AssemblyName("FfmpegPayload"));
         using (var src = payload.GetManifestResourceStream("ffmpeg.exe")
-            ?? throw new FileNotFoundException("This build does not contain ffmpeg.exe. Put ffmpeg.exe next to ScreenRecorder.exe."))
+            ?? throw new FileNotFoundException("This build does not contain ffmpeg.exe. Put ffmpeg.exe next to ScreenGank.exe."))
         {
             string tmp = exe + ".tmp";
             using (var dst = File.Create(tmp)) src.CopyTo(dst);

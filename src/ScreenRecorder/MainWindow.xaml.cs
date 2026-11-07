@@ -52,7 +52,7 @@ public partial class MainWindow : Window
     /// <summary>True once that clip has been exported, so throwing it away needs no warning.</summary>
     private bool _unsavedExported;
 
-    private static string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Screen Recorder");
+    private static string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "ScreenGank");
 
     public MainWindow()
     {
@@ -138,7 +138,7 @@ public partial class MainWindow : Window
         {
             if (App.SelfTest) App.Fail(ex.ToString());
             SetStatus("Encoder not available");
-            MessageBox.Show(this, "Could not prepare FFmpeg:\n\n" + ex.Message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, "Could not prepare FFmpeg:\n\n" + ex.Message, "ScreenGank", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         UpdateUi();
     }
@@ -263,7 +263,7 @@ public partial class MainWindow : Window
         {
             _recorder = null;
             EndRecordingUi("Could not start recording");
-            MessageBox.Show(this, ex.Message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "ScreenGank", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
         UpdateUi();
@@ -298,7 +298,7 @@ public partial class MainWindow : Window
         {
             _recorder = null;
             EndRecordingUi("Saving failed");
-            MessageBox.Show(this, ex.Message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "ScreenGank", MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         if (_closeAfterSave) Close();
@@ -332,7 +332,7 @@ public partial class MainWindow : Window
     {
         if (_mode is not (Mode.Recording or Mode.Paused)) return;
         await FinishRecordingAsync("Recording stopped early");
-        MessageBox.Show(this, message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Warning);
+        MessageBox.Show(this, message, "ScreenGank", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     // ------------------------------------------------------------------ transport buttons
@@ -358,7 +358,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, "Screen Recorder", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, ex.Message, "ScreenGank", MessageBoxButton.OK, MessageBoxImage.Error);
                 await FinishRecordingAsync("Saved what was recorded");
                 return;
             }
@@ -873,7 +873,7 @@ public partial class MainWindow : Window
         if (_mode is Mode.Recording or Mode.Paused)
         {
             e.Cancel = true;
-            if (MessageBox.Show(this, "A recording is in progress. Stop and save it before closing?", "Screen Recorder",
+            if (MessageBox.Show(this, "A recording is in progress. Stop and save it before closing?", "ScreenGank",
                     MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 _closeAfterSave = true;

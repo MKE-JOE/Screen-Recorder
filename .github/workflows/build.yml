@@ -74,7 +74,7 @@ jobs:
       - name: Self-test (start the app, unpack FFmpeg, enumerate devices, exit)
         shell: pwsh
         run: |
-          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest' -PassThru
+          $p = Start-Process publish/ScreenGank.exe -ArgumentList '--selftest' -PassThru
           if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "App did not finish its self-test (hung or showed a dialog)" }
           Get-Content publish/selftest.log
           if ($p.ExitCode -ne 0) { throw "Self-test failed with exit code $($p.ExitCode)" }
@@ -83,7 +83,7 @@ jobs:
       - name: Self-test the GIF editor (load frames, text, crop, boomerang, reduce, undo/redo, export)
         shell: pwsh
         run: |
-          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-gif', "$PWD/smoke/src.mp4", "$PWD/smoke/editor.gif" -PassThru
+          $p = Start-Process publish/ScreenGank.exe -ArgumentList '--selftest-gif', "$PWD/smoke/src.mp4", "$PWD/smoke/editor.gif" -PassThru
           if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "GIF editor self-test hung" }
           Get-Content publish/selftest.log
           if ($p.ExitCode -ne 0) { throw "GIF editor self-test failed with exit code $($p.ExitCode)" }
@@ -92,7 +92,7 @@ jobs:
       - name: Self-test the video editor (text caption, crop, resize, file size target, MP4 export)
         shell: pwsh
         run: |
-          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-video', "$PWD/smoke/busy.mp4", "$PWD/smoke/edited.mp4" -PassThru
+          $p = Start-Process publish/ScreenGank.exe -ArgumentList '--selftest-video', "$PWD/smoke/busy.mp4", "$PWD/smoke/edited.mp4" -PassThru
           if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "Video editor self-test hung" }
           Get-Content publish/selftest.log
           if ($p.ExitCode -ne 0) { throw "Video editor self-test failed with exit code $($p.ExitCode)" }
@@ -101,7 +101,7 @@ jobs:
       - name: Self-test the video editor on a still screen recording in MKV (lowest file size)
         shell: pwsh
         run: |
-          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-video', "$PWD/smoke/still.mkv", "$PWD/smoke/still-small.mp4" -PassThru
+          $p = Start-Process publish/ScreenGank.exe -ArgumentList '--selftest-video', "$PWD/smoke/still.mkv", "$PWD/smoke/still-small.mp4" -PassThru
           if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Video editor self-test hung" }
           Get-Content publish/selftest.log
           if ($p.ExitCode -ne 0) { throw "Video editor self-test failed with exit code $($p.ExitCode)" }
@@ -109,20 +109,20 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ScreenRecorder-1.0.${{ github.run_number }}
-          path: publish/ScreenRecorder.exe
+          name: ScreenGank-1.0.${{ github.run_number }}
+          path: publish/ScreenGank.exe
 
       - name: Create release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Screen Recorder 1.0.${{ github.run_number }} beta
+          name: ScreenGank 1.0.${{ github.run_number }} beta
           prerelease: true
           body: |
-            **Beta.** Download **ScreenRecorder.exe** below and run it. No install needed (Windows 10/11, 64-bit).
+            **Beta.** Download **ScreenGank.exe** below and run it. No install needed (Windows 10/11, 64-bit).
 
             The app isn't code-signed yet, so Windows may say "Windows protected your PC". Click **More info**, then **Run anyway**.
 
             Found a problem? Open an issue and attach `last-recording.txt` and `last-recording-ffmpeg.log` from `%LOCALAPPDATA%\PortableScreenRecorder`.
-          files: publish/ScreenRecorder.exe
+          files: publish/ScreenGank.exe
