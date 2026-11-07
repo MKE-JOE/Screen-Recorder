@@ -113,6 +113,7 @@ public sealed class Recorder : IAsyncDisposable
 
         // Every input is stamped with wall-clock time relative to this origin, which keeps audio and video aligned.
         double origin = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        foreach (var p in _pipes) p.SetOrigin(origin);
         var args = BuildArgs(seg, origin);
 
         _firstFrame = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -199,7 +200,9 @@ public sealed class Recorder : IAsyncDisposable
         }
         foreach (var p in _pipes) a.AddRange(p.InputArgs(origin));
 
+        // One graph for audio and video, so RTCSTART (the moment the filters start) is the same for both.
         var fc = new StringBuilder();
+        var afc = new StringBuilder();
         string toYuv = $"scale=out_color_matrix=bt709:out_range=tv,format={_opt.Encoder.PixelFormat}";
         if (_useGdi)
         {
@@ -231,14 +234,15 @@ public sealed class Recorder : IAsyncDisposable
             $"asettb=AVTB,asetpts='PTS+{originUs}-RTCSTART',atrim=start=0,asetpts=PTS,aresample=48000:async=1000:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo");
         if (_pipes.Count == 1)
         {
-            fc.Append($";[{audioBase}:a]{toStereo}[a]");
+            afc.Append($"[{audioBase}:a]{toStereo}[a]");
         }
         else if (_pipes.Count == 2)
         {
-            fc.Append($";[{audioBase}:a]{toStereo}[a0];[{audioBase + 1}:a]{toStereo}[a1]");
-            fc.Append(";[a0][a1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.98[a]");
+            afc.Append($"[{audioBase}:a]{toStereo}[a0];[{audioBase + 1}:a]{toStereo}[a1]");
+            afc.Append(";[a0][a1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.98[a]");
         }
 
+        if (afc.Length > 0) fc.Append(';').Append(afc);
         a.AddRange(new[] { "-filter_complex", fc.ToString(), "-map", "[v]" });
         if (_pipes.Count > 0) a.AddRange(new[] { "-map", "[a]" });
 

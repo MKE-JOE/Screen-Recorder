@@ -96,12 +96,23 @@ public sealed class AudioPipe : IDisposable
         }
     });
 
-    /// <summary>FFmpeg input arguments for this pipe.</summary>
+    private long _originTicks = DateTime.UtcNow.Ticks;
+
+    /// <summary>
+    /// The recording's time zero (Unix seconds). The stream written to FFmpeg starts exactly there: the time
+    /// before the pipe connects is written as silence, so the sample count itself is the timestamp.
+    /// </summary>
+    public void SetOrigin(double unixSeconds) =>
+        Interlocked.Exchange(ref _originTicks, DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Round(unixSeconds * 1000)).UtcTicks);
+
+    /// <summary>
+    /// FFmpeg input arguments for this pipe. Timestamps come from the sample count (0 = the origin), not from when
+    /// FFmpeg happened to read each packet: read-time stamps jitter whenever FFmpeg is busy, and that jitter made
+    /// FFmpeg hold back screen capture to keep the streams interleaved, which repeated frames.
+    /// </summary>
     public IEnumerable<string> InputArgs(double timeOrigin) => new[]
     {
         "-thread_queue_size", "4096",
-        "-use_wallclock_as_timestamps", "1",
-        "-itsoffset", "-" + Ffmpeg.Num(timeOrigin),
         "-f", SampleFormat, "-ar", SampleRate.ToString(), "-ac", Channels.ToString(),
         "-i", PipePath,
     };
@@ -126,7 +137,9 @@ public sealed class AudioPipe : IDisposable
         long bytesPerSec = (long)SampleRate * block;
         long tolerance = bytesPerSec * 80 / 1000 / block * block;   // 80 ms
         var silence = new byte[bytesPerSec / 10 / block * block];      // 100 ms of zeros
+        var origin = new DateTime(Interlocked.Read(ref _originTicks), DateTimeKind.Utc);
         var clock = Stopwatch.StartNew();
+        double lead = Math.Clamp((DateTime.UtcNow - origin).TotalSeconds, 0, 30);   // time since the origin, filled with silence below
         long written = 0;
         lock (_lock) _queue.Clear();
         _connected = true;
@@ -135,7 +148,7 @@ public sealed class AudioPipe : IDisposable
         {
             while (!_cts.IsCancellationRequested)
             {
-                long expected = (long)(clock.Elapsed.TotalSeconds * SampleRate) * block;
+                long expected = (long)((lead + clock.Elapsed.TotalSeconds) * SampleRate) * block;
 
                 byte[][] chunks;
                 lock (_lock) { chunks = _queue.ToArray(); _queue.Clear(); }
