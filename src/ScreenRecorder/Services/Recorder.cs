@@ -203,7 +203,7 @@ public sealed class Recorder : IAsyncDisposable
         string toYuv = $"scale=out_color_matrix=bt709:out_range=tv,format={_opt.Encoder.PixelFormat}";
         if (_useGdi)
         {
-            fc.Append($"[0:v]{toYuv}[v]");
+            fc.Append(CultureInfo.InvariantCulture, $"[0:v]settb=AVTB,setpts=PTS+{originUs}-RTCSTART,{toYuv}[v]");
         }
         else
         {
@@ -213,8 +213,9 @@ public sealed class Recorder : IAsyncDisposable
             // wall clock the audio uses. The offset between the two clocks is the smallest one seen so far (frames
             // that reached this filter without delay), allowed to creep up 20 µs per frame to follow clock drift.
             // Delays later in the pipeline therefore no longer shift frames and cause repeats or drops.
+            // Times are counted from when the filters started (see the audio note below).
             fc.Append(CultureInfo.InvariantCulture,
-                $",settb=AVTB,setpts='PTS+st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)))-{originUs}'");
+                $",settb=AVTB,setpts='PTS+st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)))-RTCSTART'");
             if (_opt.Encoder.ZeroCopy)
             {
                 if (!string.IsNullOrEmpty(_opt.Encoder.GpuFilter)) fc.Append(',').Append(_opt.Encoder.GpuFilter);
@@ -223,7 +224,11 @@ public sealed class Recorder : IAsyncDisposable
             else fc.Append($",hwdownload,format=bgra,{toYuv}[v]");
         }
 
-        const string toStereo = "aresample=48000:async=1000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
+        // The recording starts when the filters start (RTCSTART), not when FFmpeg was launched: FFmpeg takes a second
+        // or two to open everything, and that gap used to be filled by repeating a frame, a visible freeze near the
+        // start of every recording and after every resume. Audio from before that moment is dropped so both line up.
+        string toStereo = string.Create(CultureInfo.InvariantCulture,
+            $"asettb=AVTB,asetpts='PTS+{originUs}-RTCSTART',atrim=start=0,asetpts=PTS,aresample=48000:async=1000:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo");
         if (_pipes.Count == 1)
         {
             fc.Append($";[{audioBase}:a]{toStereo}[a]");
