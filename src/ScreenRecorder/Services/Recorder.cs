@@ -305,9 +305,9 @@ public sealed class Recorder : IAsyncDisposable
         a.AddRange(new[] { "-map", "[v]" });
         if (_pipes.Count > 0) a.AddRange(new[] { "-map", "[a]" });
 
-        // Frames keep their capture times. FFmpeg's constant-frame-rate mode would fill the second or two before the
-        // first frame (FFmpeg start-up) with a repeated frame; FinishAsync trims that lead-in instead.
-        a.AddRange(new[] { "-fps_mode", "passthrough" });
+        // Constant frame rate (the encoders need one). Frames carry their capture times, so FFmpeg only repeats or
+        // drops a frame when capture really fell behind; FinishAsync trims the short start-up lead-in.
+        a.AddRange(new[] { "-fps_mode", "cfr", "-r", fps.ToString() });
         a.AddRange(_opt.Encoder.Args(fps));
         bool gpuFrames = _opt.Encoder.ZeroCopy && !_useGdi;
         if (!gpuFrames) a.AddRange(new[] { "-pix_fmt", _opt.Encoder.PixelFormat });
@@ -333,33 +333,23 @@ public sealed class Recorder : IAsyncDisposable
 
     // ------------------------------------------------------------------ smoothness
 
-    private long _segFrames, _doneFrames;
-    private double _doneExpected, _doneCounted;
+    private long _segFrames, _segLag, _doneFrames, _doneLag;
     // The first couple of seconds of a segment are start-up and are left out of the measurement.
-    private (DateTime At, long Frames)? _segBase;
-    private (DateTime At, long Frames) _segLast;
+    private long? _segBaseLag;
     private DateTime _segStart;
-    private readonly Queue<(DateTime At, long Frames)> _history = new();
+    private readonly Queue<(DateTime At, long Frames, long Lag)> _history = new();
 
-    /// <summary>Frames written, and frames that should have been captured in that time but weren't (the PC fell behind).</summary>
+    /// <summary>Frames written, and frames FFmpeg had to repeat or drop because capture fell behind.</summary>
     public (long Frames, long Missed) Health
     {
         get
         {
             lock (_history)
-            {
-                double expected = _doneExpected, got = _doneCounted;
-                if (_segBase is { } b)
-                {
-                    expected += (_segLast.At - b.At).TotalSeconds * _opt.Fps;
-                    got += _segLast.Frames - b.Frames;
-                }
-                return (_doneFrames + _segFrames, (long)Math.Max(0, Math.Round(expected - got)));
-            }
+                return (_doneFrames + _segFrames, _doneLag + (_segBaseLag is { } b ? _segLag - b : 0));
         }
     }
 
-    /// <summary>Share of frames missed over the last ~5 seconds (0–1).</summary>
+    /// <summary>Share of frames over the last ~5 seconds that were repeated or dropped (0–1).</summary>
     public double RecentLag
     {
         get
@@ -369,9 +359,8 @@ public sealed class Recorder : IAsyncDisposable
                 if (_history.Count < 2) return 0;
                 var first = _history.Peek();
                 var last = _history.Last();
-                double expected = (last.At - first.At).TotalSeconds * _opt.Fps;
-                if (expected < _opt.Fps) return 0;   // under a second of data
-                return Math.Clamp(1 - (last.Frames - first.Frames) / expected, 0, 1);
+                long frames = last.Frames - first.Frames;
+                return frames < _opt.Fps ? 0 : Math.Clamp((double)(last.Lag - first.Lag) / frames, 0, 1);
             }
         }
     }
@@ -381,8 +370,8 @@ public sealed class Recorder : IAsyncDisposable
     {
         var (frames, missed) = Health;
         if (frames <= 0) return "";
-        double pct = 100.0 * missed / Math.Max(1, frames + missed);
-        return pct < 2 ? "smooth" : $"{pct:0.#}% of frames were missed because the PC fell behind";
+        double pct = 100.0 * missed / Math.Max(1, frames);
+        return pct < 2 ? "smooth" : $"{pct:0.#}% of frames were repeated or skipped because the PC fell behind";
     }
 
     /// <summary>Saves a short smoothness report for the last recording (helps compare PCs and settings).</summary>
@@ -398,7 +387,7 @@ public sealed class Recorder : IAsyncDisposable
                 $"Area: {_opt.Target.Width}x{_opt.Target.Height} at {_opt.Fps} fps",
                 $"Encoder: {_opt.Encoder}",
                 $"Frames written: {frames}",
-                $"Frames missed (PC fell behind): {missed}",
+                $"Frames repeated or skipped (PC fell behind): {missed}",
                 $"Result: {HealthSummary()}",
             }) + Environment.NewLine);
         }
@@ -407,38 +396,43 @@ public sealed class Recorder : IAsyncDisposable
 
     private async Task PumpProgress(Process p)
     {
-        lock (_history) { _segFrames = 0; _segBase = null; _segStart = DateTime.UtcNow; _history.Clear(); }
+        long dup = 0;
+        lock (_history) { _segFrames = _segLag = 0; _segBaseLag = null; _segStart = DateTime.UtcNow; _history.Clear(); }
         try
         {
             string? line;
             while ((line = await p.StandardOutput.ReadLineAsync()) != null)
             {
-                if (!line.StartsWith("frame=", StringComparison.Ordinal)
-                    || !long.TryParse(line.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v)) continue;
-                if (v > 0) _firstFrame?.TrySetResult(true);
-                var now = DateTime.UtcNow;
-                lock (_history)
+                int eq = line.IndexOf('=');
+                if (eq <= 0 || !long.TryParse(line.AsSpan(eq + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v)) continue;
+                string key = line[..eq];
+                if (key == "frame")
                 {
-                    _segFrames = v;
-                    if (now - _segStart < TimeSpan.FromSeconds(2)) continue;
-                    _segBase ??= (now, v);
-                    _segLast = (now, v);
-                    _history.Enqueue((now, v));
-                    while (_history.Count > 2 && now - _history.Peek().At > TimeSpan.FromSeconds(5)) _history.Dequeue();
+                    if (v > 0) _firstFrame?.TrySetResult(true);
+                    lock (_history) _segFrames = v;
+                }
+                else if (key == "dup_frames") dup = v;
+                else if (key == "drop_frames")   // last counter of each progress block: take a sample
+                {
+                    var now = DateTime.UtcNow;
+                    lock (_history)
+                    {
+                        _segLag = dup + v;
+                        if (now - _segStart < TimeSpan.FromSeconds(2)) continue;
+                        _segBaseLag ??= _segLag;
+                        _history.Enqueue((now, _segFrames, _segLag));
+                        while (_history.Count > 2 && now - _history.Peek().At > TimeSpan.FromSeconds(5)) _history.Dequeue();
+                    }
                 }
             }
         }
         catch { }
         lock (_history)
         {
-            if (_segBase is { } b)
-            {
-                _doneExpected += (_segLast.At - b.At).TotalSeconds * _opt.Fps;
-                _doneCounted += _segLast.Frames - b.Frames;
-            }
+            if (_segBaseLag is { } b) _doneLag += _segLag - b;
             _doneFrames += _segFrames;
-            _segFrames = 0;
-            _segBase = null;
+            _segFrames = _segLag = 0;
+            _segBaseLag = null;
             _history.Clear();
         }
     }
