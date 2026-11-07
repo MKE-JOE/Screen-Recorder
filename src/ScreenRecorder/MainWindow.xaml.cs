@@ -79,6 +79,10 @@ public partial class MainWindow : Window
         _region.HideRequested += ToggleFrame;
         Closing += OnClosing;
         AutoSaveCheck.IsChecked = _settings.AutoSave;
+        // Fit small or high-DPI screens (e.g. 1280×720 effective at 150% scaling).
+        var wa = SystemParameters.WorkArea;
+        Width = Math.Min(Width, wa.Width);
+        Height = Math.Min(Height, wa.Height);
         CleanUnsavedLeftovers();
     }
 
@@ -371,6 +375,9 @@ public partial class MainWindow : Window
         _isPlaying = true;
     }
 
+    private void OnJumpStart(object sender, RoutedEventArgs e) => Seek(0);
+    private void OnJumpEnd(object sender, RoutedEventArgs e) { PausePlayback(); Seek(_duration); }
+
     private void OnRewind(object sender, RoutedEventArgs e) => Seek(Media.Position.TotalSeconds - 5);
     private void OnForward(object sender, RoutedEventArgs e) => Seek(Media.Position.TotalSeconds + 5);
 
@@ -519,7 +526,7 @@ public partial class MainWindow : Window
         FileSizeSlider.IsEnabled = floor < 100;
         FileSizeHint.Text = floor >= 100
             ? $"This recording is already as small as it can be without losing quality ({SizeTarget.Describe(_info)})."
-            : $"Slide left for a smaller file, down to {floor:0}% of the original. Lower than that and quality would suffer.";
+            : $"Move slider to adjust export file size. Minimum size is capped to prevent poor quality.";
         OnFileSizeChanged(this, null!);
     }
 
@@ -715,7 +722,7 @@ public partial class MainWindow : Window
         SizeCombo.IsEnabled = idle && AreaMode;
         RecordButton.IsEnabled = idle && _ffmpegReady;
         PlayButton.IsEnabled = idle && hasVideo;
-        RewindButton.IsEnabled = ForwardButton.IsEnabled = idle && hasVideo;
+        RewindButton.IsEnabled = ForwardButton.IsEnabled = StartButton.IsEnabled = EndButton.IsEnabled = idle && hasVideo;
         PauseButton.IsEnabled = _mode is Mode.Recording or Mode.Paused || (idle && hasVideo);
         StopButton.IsEnabled = _mode is Mode.Countdown or Mode.Recording or Mode.Paused || (idle && hasVideo);
         Timeline.IsEnabled = idle && hasVideo;

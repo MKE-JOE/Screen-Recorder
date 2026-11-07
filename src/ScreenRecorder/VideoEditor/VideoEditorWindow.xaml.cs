@@ -546,7 +546,7 @@ public partial class VideoEditorWindow : Window
         FileSizeSlider.IsEnabled = floor < 100 && !_busy;
         FileSizeHint.Text = floor >= 100
             ? $"Already as small as it can be without losing quality ({SizeTarget.Describe(_info)})."
-            : $"Slide left for a smaller file, down to {floor:0}%. Lower than that and quality would suffer.";
+            : $"Move slider to adjust export file size. Minimum size is capped to prevent poor quality.";
         OnFileSizeChanged(this, null!);
     }
 
