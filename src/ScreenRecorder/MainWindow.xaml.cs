@@ -113,7 +113,7 @@ public partial class MainWindow : Window
                 double floor = Math.Max(
                     SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 30, 60, true, 5_000_000, 1000, 320)),
                     SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 240, 60, true, 6_000_000, 185, 2)));
-                if (floor > 50) App.Fail($"File size floor too high for a typical screen recording: {floor}%");
+                if (floor > 65) App.Fail($"File size floor too high for a typical screen recording: {floor}%");
                 var displays = Displays.GetAll();
                 var target = Displays.Resolve(_region.GetCaptureRect());
                 App.Pass($"sizeFloor={floor}%\nffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +

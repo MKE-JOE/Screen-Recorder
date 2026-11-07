@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace ScreenRecorder.Services;
 
 /// <summary>Bitrates for a size-targeted encode.</summary>
-public sealed record Budget(int VideoKbps, int AudioKbps, int Gop);
+public sealed record Budget(int VideoKbps, int AudioKbps, int Gop, double TargetBytes);
 
 /// <summary>What FFmpeg reports about a video file. Stream bitrates are null when the container doesn't say (MKV).</summary>
 public sealed record VideoInfo(int Width, int Height, double Duration, double Fps, bool HasAudio, long Bytes,
@@ -23,6 +23,12 @@ public static class SizeTarget
     /// recorded at CRF 18, so its bitrate already reflects how busy the content is (a still screen needs very little).
     /// </summary>
     private const double MinVideoKbps = 50;
+    /// <summary>
+    /// Keyframes keep a fixed cost however still the screen is, so very low bitrates make text soft. This keeps
+    /// at least 0.05 bits per pixel per second (about 100 kbps at 1080p), which measured visually lossless
+    /// (SSIM 0.996) on a still 1080p60 clip, while 25% of that bitrate measured clearly soft (0.94).
+    /// </summary>
+    private const double MinBitsPerPixelSecond = 0.05;
     /// <summary>Small safety margin so the file lands at or just under the target.</summary>
     private const double Overhead = 0.99;
 
@@ -89,16 +95,19 @@ public static class SizeTarget
     }
 
     /// <summary>
-    /// Smallest percentage the slider allows (25–100): video down to 25% of its original bitrate (at least 50 kbps),
+    /// Smallest percentage the slider allows (25–100): video down to 25% of its original bitrate (but keeping
+    /// enough for sharp keyframes, see MinBitsPerPixelSecond),
     /// audio down to 160k AAC (or less if the original audio already used less, e.g. silence).
     /// <paramref name="pixelFactor"/> scales the video bitrate for a crop/resize in the editor.
     /// </summary>
-    public static double FloorPercent(VideoInfo src, double pixelFactor = 1)
+    public static double FloorPercent(VideoInfo src, double pixelFactor = 1, int outW = 0, int outH = 0)
     {
         var (video, audio) = Rates(src);
         video *= pixelFactor;
-        // 50 kbps minimum, but a clip that's already below that can still shrink a little.
-        double minVideo = Math.Max(video * MinPercent / 100, Math.Min(MinVideoKbps, video * 0.6));
+        double pixels = outW > 0 && outH > 0 ? (double)outW * outH : (double)src.Width * src.Height;
+        double safety = Math.Max(MinVideoKbps, MinBitsPerPixelSecond * pixels / 1000);
+        // A clip that's already below the safety level can still shrink a little.
+        double minVideo = Math.Max(video * MinPercent / 100, Math.Min(safety, video * 0.6));
         double minAudio = Math.Min(160, audio);
         double c = ContainerKbps(src);
         double pct = (minVideo + minAudio + c) / Overhead / (video + audio + c) * 100;
@@ -124,7 +133,7 @@ public static class SizeTarget
         double audioUse = src.HasAudio ? Math.Min(audio, Rates(src).Audio) : 0;
         // A keyframe every 10 s instead of every ~4 s: screen content is mostly still, and keyframes are
         // the expensive part at low bitrates.
-        return new Budget(Math.Max(20, (int)(total - audioUse)), audio, (int)Math.Round(Math.Clamp(src.Fps, 10, 120) * 10));
+        return new Budget(Math.Max(20, (int)(total - audioUse)), audio, (int)Math.Round(Math.Clamp(src.Fps, 10, 120) * 10), targetBytes);
     }
 
     /// <summary>Short description of the original's bitrates, shown when the slider can't go lower.</summary>
@@ -161,19 +170,36 @@ public static class SizeTarget
         }
 
         string log = Path.Combine(work, "x264pass");
-        var rate = new[] { "-c:v", "libx264", "-preset", "medium", "-b:v", kbps + "k",
-            "-maxrate", kbps * 2 + "k", "-bufsize", kbps * 4 + "k", "-g", budget.Gop.ToString(CultureInfo.InvariantCulture),
+        string[] Rate(int k) => new[] { "-c:v", "libx264", "-preset", "medium", "-b:v", k + "k",
+            "-maxrate", k * 2 + "k", "-bufsize", k * 4 + "k", "-g", budget.Gop.ToString(CultureInfo.InvariantCulture),
             "-passlogfile", log };
 
         var p1 = new List<string>(common); p1.AddRange(inputArgs);
-        p1.AddRange(rate); p1.AddRange(new[] { "-pass", "1" }); p1.AddRange(color);
+        p1.AddRange(Rate(kbps)); p1.AddRange(new[] { "-pass", "1" }); p1.AddRange(color);
         p1.AddRange(new[] { "-an", "-f", "null", "-" });
-        await Ffmpeg.RunAsync(p1, work, length, Scale(progress, 0, 0.45), ct);
+        await Ffmpeg.RunAsync(p1, work, length, Scale(progress, 0, 0.4), ct);
 
-        var p2 = new List<string>(common); p2.AddRange(inputArgs);
-        p2.AddRange(rate); p2.AddRange(new[] { "-pass", "2" }); p2.AddRange(color);
-        p2.AddRange(audio); p2.AddRange(mux); p2.Add(output);
-        await Ffmpeg.RunAsync(p2, work, length, Scale(progress, 0.45, 0.55), ct);
+        Task Pass2(int k, double from, double span)
+        {
+            var p2 = new List<string>(common); p2.AddRange(inputArgs);
+            p2.AddRange(Rate(k)); p2.AddRange(new[] { "-pass", "2" }); p2.AddRange(color);
+            p2.AddRange(audio); p2.AddRange(mux); p2.Add(output);
+            return Ffmpeg.RunAsync(p2, work, length, Scale(progress, from, span), ct);
+        }
+        await Pass2(kbps, 0.4, 0.6);
+
+        // At very low bitrates x264 tends to overshoot (keyframes have a fixed cost). If the file came out more
+        // than 8% over, run the second pass again with the difference taken off the video bitrate.
+        double actual = new FileInfo(output).Length;
+        if (actual > budget.TargetBytes * 1.08 && length > 0)
+        {
+            int fixedKbps = (int)(kbps - (actual - budget.TargetBytes) * 8 / 1000 / length);
+            if (fixedKbps >= 15 && fixedKbps < kbps)
+            {
+                progress?.Report(0.4);
+                await Pass2(fixedKbps, 0.4, 0.6);
+            }
+        }
     }
 
     private static IProgress<double>? Scale(IProgress<double>? p, double offset, double span) =>

@@ -537,7 +537,8 @@ public partial class VideoEditorWindow : Window
         if (FileSizeSlider == null || FileSizeText == null) return;
         if (_info == null || !_ready || _end <= _start) { FileSizeSlider.IsEnabled = false; return; }
         // Same floor rule as the main screen, measured against the full-quality size of this edit.
-        double floor = SizeTarget.FloorPercent(_info, PixelFactor());
+        var (ow, oh) = OutputDimensions();
+        double floor = SizeTarget.FloorPercent(_info, PixelFactor(), ow, oh);
         _sizeSync = true;
         FileSizeSlider.Minimum = floor;
         if (FileSizeSlider.Value < floor) FileSizeSlider.Value = floor;
@@ -732,9 +733,9 @@ public partial class VideoEditorWindow : Window
             SyncTrim();
             string probe = $"{_info?.Width}x{_info?.Height} {_info?.Fps}fps {_info?.Duration:0.0}s {_info?.Bytes}B, {(_info == null ? "no info" : SizeTarget.Describe(_info))}";
             if (_info == null) App.Fail("Could not read the test clip's details");
-            if (SizeTarget.FloorPercent(_info) > 50) App.Fail($"Main-screen floor too high: {SizeTarget.FloorPercent(_info)}% ({probe})");
+            if (SizeTarget.FloorPercent(_info) > 70) App.Fail($"Main-screen floor too high: {SizeTarget.FloorPercent(_info)}% ({probe})");
             if (FileSizeSlider.Minimum >= 100) App.Fail($"File size slider has no range on the test clip ({probe})");
-            if (longClip && FileSizeSlider.Minimum > 75) App.Fail($"Editor floor too high on a still clip: {FileSizeSlider.Minimum}% ({probe})");
+            if (longClip && FileSizeSlider.Minimum > 80) App.Fail($"Editor floor too high on a still clip: {FileSizeSlider.Minimum}% ({probe})");
             FileSizeSlider.Value = longClip ? FileSizeSlider.Minimum : Math.Max(FileSizeSlider.Minimum, 60);
             double expected = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
             var kbps = TargetBudget();
