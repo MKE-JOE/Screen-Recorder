@@ -46,6 +46,8 @@ public partial class VideoEditorWindow : Window
     private readonly Dictionary<TextLayer, OutlinedText> _visuals = new();
     private readonly List<BlurBox> _blurs = new();
     private readonly Dictionary<BlurBox, BlurVisual> _blurVisuals = new();
+    /// <summary>False after "Done": outlines and handles are hidden so the edit can be reviewed as it will export.</summary>
+    private bool _blurEditing = true;
     private int _w = 1280, _h = 720;
     private double _duration, _start, _end;
     private bool _loadingUi, _playing, _syncing, _busy;
@@ -463,8 +465,9 @@ public partial class VideoEditorWindow : Window
         AddBlurButton.IsEnabled = _blurs.Count < BlurBox.MaxCount;
         BlurHint.Text = _blurs.Count >= BlurBox.MaxCount
             ? $"That's the most boxes ({BlurBox.MaxCount}). Remove one to add another."
-            : "Hide part of the video. Drag a box on the preview to move it, the corner to resize. Up to 10 boxes.";
+            : "Hide part of the video. Drag a box on the preview to move it, the corner to resize. Click Done to hide the outlines. Up to 10 boxes.";
         UpdateBlurHandle();
+        DoneBlurButton.IsEnabled = _blurs.Count > 0;
     }
 
     private void OnAddBlur(object sender, RoutedEventArgs e)
@@ -479,6 +482,7 @@ public partial class VideoEditorWindow : Window
         double y = Math.Clamp(Math.Round(a.Y + (a.Height - h) / 2 + shift), 0, _h - h);
         var box = new BlurBox { Area = new Rect(x, y, w, h) };
         _blurs.Add(box);
+        _blurEditing = true;
         RefreshBlurs();
         BlurList.SelectedItem = box;
     }
@@ -493,7 +497,16 @@ public partial class VideoEditorWindow : Window
 
     private void OnBlurSelected(object sender, SelectionChangedEventArgs e)
     {
+        if (CurrentBlur != null) _blurEditing = true;   // picking a box in the list brings the outlines back
         LoadBlurEditor();
+        foreach (var b in _blurs) UpdateBlurVisual(b);
+        UpdateBlurHandle();
+    }
+
+    private void OnBlurDone(object sender, RoutedEventArgs e)
+    {
+        _blurEditing = false;
+        BlurList.SelectedItem = null;   // also hides the editor fields and the handle
         foreach (var b in _blurs) UpdateBlurVisual(b);
         UpdateBlurHandle();
     }
@@ -566,12 +579,12 @@ public partial class VideoEditorWindow : Window
         bool on = b.IsAt(t);
         v.Clip.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         // The selected box keeps its frame outside its time range, so it can still be found and moved.
-        v.Frame.Visibility = on || CurrentBlur == b ? Visibility.Visible : Visibility.Collapsed;
+        v.Frame.Visibility = _blurEditing && (on || CurrentBlur == b) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateBlurHandle()
     {
-        if (CurrentBlur is not BlurBox b) { BlurHandle.Visibility = Visibility.Collapsed; return; }
+        if (!_blurEditing || CurrentBlur is not BlurBox b) { BlurHandle.Visibility = Visibility.Collapsed; return; }
         BlurHandle.Visibility = Visibility.Visible;
         Canvas.SetLeft(BlurHandle, b.Area.Right - 12);
         Canvas.SetTop(BlurHandle, b.Area.Bottom - 12);
@@ -957,6 +970,9 @@ public partial class VideoEditorWindow : Window
             OnAddBlur(this, new RoutedEventArgs());   // second box, whole clip, in the top-left corner
             CurrentBlur!.Area = new Rect(0, 0, 120, 80);
             if (_blurs.Count != 2) App.Fail("Could not add blur boxes");
+            OnBlurDone(this, new RoutedEventArgs());
+            if (_blurVisuals.Values.Any(v => v.Frame.Visibility == Visibility.Visible) || BlurHandle.Visibility == Visibility.Visible)
+                App.Fail("Blur outlines still showing after Done");
             // Short busy clip: crop, resize, trim to 3 s at 60%. Long, mostly still clip (like a real screen
             // recording): keep it whole and go to the lowest size the slider allows.
             bool longClip = _duration > 10;

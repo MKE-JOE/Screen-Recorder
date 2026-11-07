@@ -19,7 +19,7 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenGa
 - **Video editor** (MP4 or MKV, then *Open in editor…*): a simple editor that keeps full quality.
   - Preview with play/pause, a scrub bar and ±5 s skip. Set the start and end to trim. Trimming and text now live only in the editors.
   - **Text captions** that show for the time range you choose ("from here" / "to here"), each with its own font, size, colour and outline. Drag them into place.
-  - **Blur boxes** to hide part of the video, like a password or an email address. Add up to 10, drag and resize each one on the preview, and choose when it starts and stops. The preview shows the blur live.
+  - **Blur boxes** to hide part of the video, like a password or an email address. Add up to 10, drag and resize each one on the preview, and choose when it starts and stops. The preview shows the blur live; click **Done** to hide the box outlines and review the result (pick a box in the list to edit it again). The saved video never has outlines.
   - **Crop** presets (square, portrait 4:5, wide 16:9, story 9:16, free) and **resize** to 1080p, 720p or 480p (never upscales).
   - The same **File size** slider, measured against the edited clip.
   - Saves as MP4 or MKV with H.264 (CRF 18) and AAC 320 kbps audio. Captions are drawn exactly as they look in the preview.
