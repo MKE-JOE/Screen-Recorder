@@ -5,12 +5,14 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using ScreenRecorder.Controls;
 using ScreenRecorder.GifEditor;
 using ScreenRecorder.Services;
+using Rectangle = System.Windows.Shapes.Rectangle;
 
 namespace ScreenRecorder.VideoEditor;
 
@@ -25,7 +27,7 @@ public sealed class VideoEditorOptions
     public double SizePercent { get; init; } = 100;
 }
 
-/// <summary>Simple video editor: trim, crop, resize and timed captions, exported as high-quality MP4 or MKV.</summary>
+/// <summary>Simple video editor: trim, crop, resize, timed captions and blur boxes, exported as high-quality MP4 or MKV.</summary>
 public partial class VideoEditorWindow : Window
 {
     private sealed record OutputSize(string Name, int Height) { public override string ToString() => Name; }
@@ -42,6 +44,8 @@ public partial class VideoEditorWindow : Window
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private readonly List<TextLayer> _layers = new();
     private readonly Dictionary<TextLayer, OutlinedText> _visuals = new();
+    private readonly List<BlurBox> _blurs = new();
+    private readonly Dictionary<BlurBox, BlurVisual> _blurVisuals = new();
     private int _w = 1280, _h = 720;
     private double _duration, _start, _end;
     private bool _loadingUi, _playing, _syncing, _busy;
@@ -50,10 +54,14 @@ public partial class VideoEditorWindow : Window
     private CancellationTokenSource? _exportCts;
     private string? _lastSaved;
 
-    private enum Drag { None, Text, Crop }
+    private enum Drag { None, Text, Crop, Blur }
     private Drag _drag;
     private Point _dragStart, _dragOrigin;
     private TextLayer? _dragLayer;
+    private BlurBox? _dragBlur;
+
+    /// <summary>Preview of one blur box: a clipped, blurred copy of the video under it, plus a frame to drag.</summary>
+    private sealed record BlurVisual(Canvas Clip, Rectangle Blurred, VisualBrush Brush, Border Frame);
 
     /// <summary>Set by --selftest-video: after loading, add a caption and a crop, export here, then exit.</summary>
     public string? SelfTestOutput { get; init; }
@@ -249,6 +257,7 @@ public partial class VideoEditorWindow : Window
         foreach (var layer in _layers)
         {
             var v = new OutlinedText { Cursor = Cursors.SizeAll, Tag = layer };
+            Panel.SetZIndex(v, 2);   // above blur frames, so overlapping text can still be dragged
             v.MouseLeftButtonDown += OnTextMouseDown;
             StageCanvas.Children.Add(v);
             _visuals[layer] = v;
@@ -385,6 +394,7 @@ public partial class VideoEditorWindow : Window
     {
         foreach (var (layer, v) in _visuals)
             v.Visibility = layer.IsAt(t) && !string.IsNullOrWhiteSpace(layer.Text) ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var b in _blurs) UpdateBlurVisibility(b, t);
     }
 
     private void OnTextMouseDown(object sender, MouseButtonEventArgs e)
@@ -399,6 +409,189 @@ public partial class VideoEditorWindow : Window
         _dragOrigin = new Point(Canvas.GetLeft(v), l.Y);
         v.CaptureMouse();
         e.Handled = true;
+    }
+
+    // ------------------------------------------------------------------ blur
+
+    private BlurBox? CurrentBlur => BlurList.SelectedItem as BlurBox;
+
+    /// <summary>Preview blur radius in video pixels; a Gaussian this size looks close to FFmpeg's two-pass box blur.</summary>
+    private double PreviewBlurRadius => BlurBox.Radius(_h) * 1.6;
+
+    private void RefreshBlurs()
+    {
+        var sel = CurrentBlur;
+        for (int i = 0; i < _blurs.Count; i++) _blurs[i].Number = i + 1;
+        BlurList.ItemsSource = null;
+        BlurList.ItemsSource = _blurs;
+        if (sel != null && _blurs.Contains(sel)) BlurList.SelectedItem = sel;
+
+        foreach (var v in _blurVisuals.Values) { StageCanvas.Children.Remove(v.Clip); StageCanvas.Children.Remove(v.Frame); }
+        _blurVisuals.Clear();
+        foreach (var b in _blurs)
+        {
+            var brush = new VisualBrush(Media) { ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.Fill };
+            var blurred = new Rectangle
+            {
+                Fill = brush,
+                Effect = new BlurEffect { Radius = PreviewBlurRadius, KernelType = KernelType.Gaussian, RenderingBias = RenderingBias.Performance },
+            };
+            // Without a working preview there is no video to blur, so show a grey patch where the blur will go.
+            var clip = new Canvas
+            {
+                ClipToBounds = true, IsHitTestVisible = false,
+                Background = _previewOk ? null : new SolidColorBrush(Color.FromArgb(0xB0, 0x80, 0x80, 0x80)),
+            };
+            clip.Children.Add(blurred);
+            Panel.SetZIndex(clip, -1);   // under the crop mask, like the real blur
+            var frame = new Border { Background = new SolidColorBrush(Color.FromArgb(1, 255, 255, 255)), Cursor = Cursors.SizeAll, Tag = b };
+            frame.MouseLeftButtonDown += OnBlurMouseDown;
+            Panel.SetZIndex(frame, 1);   // above the crop box, so a blur inside the crop can be grabbed
+            StageCanvas.Children.Add(clip);
+            StageCanvas.Children.Add(frame);
+            _blurVisuals[b] = new BlurVisual(clip, blurred, brush, frame);
+            UpdateBlurVisual(b);
+        }
+        AddBlurButton.IsEnabled = _blurs.Count < BlurBox.MaxCount;
+        BlurHint.Text = _blurs.Count >= BlurBox.MaxCount
+            ? $"That's the most boxes ({BlurBox.MaxCount}). Remove one to add another."
+            : "Hide part of the video. Drag a box on the preview to move it, the corner to resize. Up to 10 boxes.";
+        UpdateBlurHandle();
+    }
+
+    private void OnAddBlur(object sender, RoutedEventArgs e)
+    {
+        if (_blurs.Count >= BlurBox.MaxCount) return;
+        var a = VisibleArea;
+        double w = Math.Min(_w, Math.Max(BlurBox.MinSize, Math.Round(a.Width / 4)));
+        double h = Math.Min(_h, Math.Max(BlurBox.MinSize, Math.Round(a.Height / 4)));
+        // Stagger new boxes a little so they don't land exactly on top of each other.
+        double shift = (_blurs.Count % 5) * Math.Round(Math.Min(a.Width, a.Height) / 20);
+        double x = Math.Clamp(Math.Round(a.X + (a.Width - w) / 2 + shift), 0, _w - w);
+        double y = Math.Clamp(Math.Round(a.Y + (a.Height - h) / 2 + shift), 0, _h - h);
+        var box = new BlurBox { Area = new Rect(x, y, w, h) };
+        _blurs.Add(box);
+        RefreshBlurs();
+        BlurList.SelectedItem = box;
+    }
+
+    private void OnRemoveBlur(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        _blurs.Remove(b);
+        RefreshBlurs();
+        LoadBlurEditor();
+    }
+
+    private void OnBlurSelected(object sender, SelectionChangedEventArgs e)
+    {
+        LoadBlurEditor();
+        foreach (var b in _blurs) UpdateBlurVisual(b);
+        UpdateBlurHandle();
+    }
+
+    private void LoadBlurEditor()
+    {
+        var b = CurrentBlur;
+        BlurEditor.IsEnabled = b != null;
+        if (b == null) { BlurFromText.Text = BlurToText.Text = ""; return; }
+        BlurFromText.Text = b.StartSec <= 0 ? "start" : Fmt(b.StartSec);
+        BlurToText.Text = b.EndSec == double.MaxValue ? "end" : Fmt(b.EndSec);
+    }
+
+    private void OnBlurFrom(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        b.StartSec = Position;
+        if (b.EndSec < b.StartSec) b.EndSec = double.MaxValue;
+        LoadBlurEditor();
+        UpdateVisibility(Position);
+    }
+
+    private void OnBlurTo(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        b.EndSec = Position;
+        if (b.StartSec > b.EndSec) b.StartSec = 0;
+        LoadBlurEditor();
+        UpdateVisibility(Position);
+    }
+
+    private void OnBlurAll(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        b.StartSec = 0;
+        b.EndSec = double.MaxValue;
+        LoadBlurEditor();
+        UpdateVisibility(Position);
+    }
+
+    private void UpdateBlurVisual(BlurBox b)
+    {
+        if (!_blurVisuals.TryGetValue(b, out var v)) return;
+        var a = b.Area;
+        // The blurred copy is larger than the box and clipped to it, so the edges stay solid instead of fading out.
+        double pad = Math.Ceiling(PreviewBlurRadius);
+        Canvas.SetLeft(v.Clip, a.X);
+        Canvas.SetTop(v.Clip, a.Y);
+        v.Clip.Width = a.Width;
+        v.Clip.Height = a.Height;
+        Canvas.SetLeft(v.Blurred, -pad);
+        Canvas.SetTop(v.Blurred, -pad);
+        v.Blurred.Width = a.Width + 2 * pad;
+        v.Blurred.Height = a.Height + 2 * pad;
+        v.Brush.Viewbox = new Rect(a.X - pad, a.Y - pad, a.Width + 2 * pad, a.Height + 2 * pad);
+
+        bool selected = CurrentBlur == b;
+        Canvas.SetLeft(v.Frame, a.X);
+        Canvas.SetTop(v.Frame, a.Y);
+        v.Frame.Width = a.Width;
+        v.Frame.Height = a.Height;
+        v.Frame.BorderThickness = new Thickness(selected ? 3 : 1);
+        v.Frame.BorderBrush = selected ? Brushes.White : new SolidColorBrush(Color.FromArgb(0xB0, 255, 255, 255));
+        UpdateBlurVisibility(b, Position);
+    }
+
+    private void UpdateBlurVisibility(BlurBox b, double t)
+    {
+        if (!_blurVisuals.TryGetValue(b, out var v)) return;
+        bool on = b.IsAt(t);
+        v.Clip.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        // The selected box keeps its frame outside its time range, so it can still be found and moved.
+        v.Frame.Visibility = on || CurrentBlur == b ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateBlurHandle()
+    {
+        if (CurrentBlur is not BlurBox b) { BlurHandle.Visibility = Visibility.Collapsed; return; }
+        BlurHandle.Visibility = Visibility.Visible;
+        Canvas.SetLeft(BlurHandle, b.Area.Right - 12);
+        Canvas.SetTop(BlurHandle, b.Area.Bottom - 12);
+    }
+
+    private void OnBlurMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_busy) return;
+        var frame = (Border)sender;
+        var b = (BlurBox)frame.Tag;
+        BlurList.SelectedItem = b;
+        _drag = Drag.Blur;
+        _dragBlur = b;
+        _dragStart = e.GetPosition(StageCanvas);
+        _dragOrigin = b.Area.TopLeft;
+        frame.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnBlurResize(object sender, DragDeltaEventArgs e)
+    {
+        if (_busy || CurrentBlur is not BlurBox b) return;
+        var a = b.Area;
+        double w = Math.Clamp(Math.Round(a.Width + e.HorizontalChange), BlurBox.MinSize, _w - a.X);
+        double h = Math.Clamp(Math.Round(a.Height + e.VerticalChange), BlurBox.MinSize, _h - a.Y);
+        b.Area = new Rect(a.X, a.Y, w, h);
+        UpdateBlurVisual(b);
+        UpdateBlurHandle();
     }
 
     // ------------------------------------------------------------------ crop + size
@@ -498,6 +691,14 @@ public partial class VideoEditorWindow : Window
             l.Y = Math.Round(_dragOrigin.Y + dy);
             UpdateVisual(l);
         }
+        else if (_drag == Drag.Blur && _dragBlur is BlurBox b)
+        {
+            double x = Math.Clamp(_dragOrigin.X + dx, 0, _w - b.Area.Width);
+            double y = Math.Clamp(_dragOrigin.Y + dy, 0, _h - b.Area.Height);
+            b.Area = new Rect(Math.Round(x), Math.Round(y), b.Area.Width, b.Area.Height);
+            UpdateBlurVisual(b);
+            UpdateBlurHandle();
+        }
         else if (_drag == Drag.Crop)
         {
             double x = Math.Clamp(_dragOrigin.X + dx, 0, _w - _crop.Width);
@@ -512,6 +713,7 @@ public partial class VideoEditorWindow : Window
         if (_drag == Drag.None) return;
         _drag = Drag.None;
         _dragLayer = null;
+        _dragBlur = null;
         Mouse.Capture(null);
     }
 
@@ -644,9 +846,10 @@ public partial class VideoEditorWindow : Window
         var active = _layers.Where(l => !string.IsNullOrWhiteSpace(l.Text) && l.EndSec > _start && l.StartSec < _end).ToList();
         bool crop = !_cropPreset.IsOff;
         bool scale = outH != ((int)area.Height & ~1);
+        var blurs = _blurs.Where(b => b.EndSec > _start && b.StartSec < _end).ToList();
         var kbps = TargetBudget();
 
-        if (active.Count == 0 && !crop && !scale)
+        if (active.Count == 0 && blurs.Count == 0 && !crop && !scale)
         {
             // Only trimming: reuse the plain exporter (stream copy when nothing is cut).
             await Exporter.ExportAsync(new ExportOptions
@@ -672,11 +875,22 @@ public partial class VideoEditorWindow : Window
 
             var graph = new System.Text.StringBuilder();
             string last = "0:v";
+            // Blur first, on the full frame, so captions drawn over a blurred area stay sharp.
+            int radius = BlurBox.Radius(_h);
+            for (int i = 0; i < blurs.Count; i++)
+            {
+                var r = blurs[i].EvenArea(_w, _h);
+                int luma = Math.Max(1, Math.Min(radius, Math.Min(r.Width, r.Height) / 2));
+                int chroma = Math.Min(luma, Math.Min(r.Width, r.Height) / 4);   // 4:2:0 chroma planes are half size
+                graph.Append($"[{last}]split[bm{i}][bs{i}];");
+                graph.Append($"[bs{i}]crop={r.Width}:{r.Height}:{r.X}:{r.Y},");
+                graph.Append($"boxblur=luma_radius={luma}:luma_power=2:chroma_radius={chroma}:chroma_power=2[bb{i}];");
+                graph.Append($"[bm{i}][bb{i}]overlay={r.X}:{r.Y}:enable='{Between(blurs[i].StartSec, blurs[i].EndSec, length)}'[b{i}];");
+                last = $"b{i}";
+            }
             for (int i = 0; i < active.Count; i++)
             {
-                double a = Math.Max(0, active[i].StartSec - _start);
-                double b = active[i].EndSec == double.MaxValue ? length + 1 : Math.Min(length + 1, active[i].EndSec - _start);
-                graph.Append(CultureInfo.InvariantCulture, $"[{last}][{i + 1}:v]overlay=0:0:enable='between(t,{Ffmpeg.Num(a)},{Ffmpeg.Num(b)})'[t{i}];");
+                graph.Append(CultureInfo.InvariantCulture, $"[{last}][{i + 1}:v]overlay=0:0:enable='{Between(active[i].StartSec, active[i].EndSec, length)}'[t{i}];");
                 last = $"t{i}";
             }
             graph.Append($"[{last}]");
@@ -700,6 +914,14 @@ public partial class VideoEditorWindow : Window
         }
     }
 
+    /// <summary>FFmpeg timeline expression for a source-time range, relative to the trimmed clip.</summary>
+    private string Between(double startSec, double endSec, double length)
+    {
+        double a = Math.Max(0, startSec - _start);
+        double b = endSec == double.MaxValue ? length + 1 : Math.Min(length + 1, endSec - _start);
+        return $"between(t,{Ffmpeg.Num(a)},{Ffmpeg.Num(b)})";
+    }
+
     private void RenderLayer(TextLayer layer, Rect area, string path)
     {
         var dv = new DrawingVisual();
@@ -721,6 +943,12 @@ public partial class VideoEditorWindow : Window
             OnLayerPlace(new Button { Tag = "bottom" }, new RoutedEventArgs());
             CurrentLayer!.StartSec = 0.5;
             CurrentLayer.EndSec = 2;
+            OnAddBlur(this, new RoutedEventArgs());
+            CurrentBlur!.StartSec = 1;
+            CurrentBlur.EndSec = 2.5;
+            OnAddBlur(this, new RoutedEventArgs());   // second box, whole clip, in the top-left corner
+            CurrentBlur!.Area = new Rect(0, 0, 120, 80);
+            if (_blurs.Count != 2) App.Fail("Could not add blur boxes");
             // Short busy clip: crop, resize, trim to 3 s at 60%. Long, mostly still clip (like a real screen
             // recording): keep it whole and go to the lowest size the slider allows.
             bool longClip = _duration > 10;
@@ -756,6 +984,7 @@ public partial class VideoEditorWindow : Window
         TextCard.IsEnabled = CropCard.IsEnabled = ExportButton.IsEnabled = FmtMp4.IsEnabled = FmtMkv.IsEnabled = !busy;
         FileSizeSlider.IsEnabled = !busy && FileSizeSlider.Minimum < 100 && _info != null;
         CancelButton.IsEnabled = busy;
+        BlurCard.IsEnabled = !busy;
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => _exportCts?.Cancel();

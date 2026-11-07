@@ -36,7 +36,7 @@ jobs:
         run: |
           $ff = "src/FfmpegPayload/Assets/ffmpeg.exe"
           $filters = (& $ff -hide_banner -filters) -join "`n"
-          foreach ($n in 'ddagrab','hwdownload','drawtext','palettegen','paletteuse','amix','alimiter','aresample') {
+          foreach ($n in 'ddagrab','hwdownload','drawtext','boxblur','palettegen','paletteuse','amix','alimiter','aresample') {
             if ($filters -notmatch "\s$n\s") { throw "FFmpeg is missing filter $n" }
           }
           $enc = (& $ff -hide_banner -encoders) -join "`n"
@@ -89,7 +89,7 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "GIF editor self-test failed with exit code $($p.ExitCode)" }
           Remove-Item publish/selftest.log
 
-      - name: Self-test the video editor (text caption, crop, resize, file size target, MP4 export)
+      - name: Self-test the video editor (text caption, blur boxes, crop, resize, file size target, MP4 export)
         shell: pwsh
         run: |
           $p = Start-Process publish/ScreenGank.exe -ArgumentList '--selftest-video', "$PWD/smoke/busy.mp4", "$PWD/smoke/edited.mp4" -PassThru

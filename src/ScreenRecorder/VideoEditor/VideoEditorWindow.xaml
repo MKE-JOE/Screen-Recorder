@@ -27,7 +27,15 @@
                             <Path x:Name="CropMask" Fill="#99000000" IsHitTestVisible="False" Visibility="Collapsed"/>
                             <Border x:Name="CropBox" BorderBrush="White" BorderThickness="3" Background="#01FFFFFF"
                                     Cursor="SizeAll" Visibility="Collapsed" MouseLeftButtonDown="OnCropMouseDown"/>
-                            <Thumb x:Name="CropHandle" Width="24" Height="24" Cursor="SizeNWSE" Visibility="Collapsed" DragDelta="OnCropResize">
+                            <Thumb x:Name="CropHandle" Width="24" Height="24" Cursor="SizeNWSE" Visibility="Collapsed" Panel.ZIndex="3" DragDelta="OnCropResize">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Rectangle Fill="White" Stroke="#2563EB" StrokeThickness="3"/>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                            <Thumb x:Name="BlurHandle" Width="24" Height="24" Cursor="SizeNWSE" Visibility="Collapsed" Panel.ZIndex="3"
+                                   DragDelta="OnBlurResize">
                                 <Thumb.Template>
                                     <ControlTemplate TargetType="Thumb">
                                         <Rectangle Fill="White" Stroke="#2563EB" StrokeThickness="3"/>
@@ -134,6 +142,40 @@
                             <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
                                        Text="Drag the text on the preview to move it."/>
                         </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="BlurCard" Style="{StaticResource Card}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,8">
+                            <Button DockPanel.Dock="Right" Content="Remove" Click="OnRemoveBlur" Margin="4,0,0,0"/>
+                            <Button x:Name="AddBlurButton" DockPanel.Dock="Right" Content="+ Add blur" Click="OnAddBlur"/>
+                            <TextBlock Style="{StaticResource CardTitle}" Margin="0" VerticalAlignment="Center" Text="Blur"/>
+                        </DockPanel>
+                        <ListBox x:Name="BlurList" Height="64" SelectionChanged="OnBlurSelected"/>
+                        <StackPanel x:Name="BlurEditor" Margin="0,8,0,0" IsEnabled="False">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="4"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Style="{StaticResource Label}" Text="Blur from" Width="70"/>
+                                <TextBlock x:Name="BlurFromText" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <Button Grid.Column="2" Content="Set to now" Click="OnBlurFrom"/>
+                                <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="Until" Width="70"/>
+                                <TextBlock x:Name="BlurToText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <Button Grid.Row="2" Grid.Column="2" Content="Set to now" Click="OnBlurTo"/>
+                            </Grid>
+                            <Button Content="Blur for the whole clip" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OnBlurAll"/>
+                        </StackPanel>
+                        <TextBlock x:Name="BlurHint" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
+                                   Text="Hide part of the video. Drag a box on the preview to move it, the corner to resize. Up to 10 boxes."/>
                     </StackPanel>
                 </Border>
 
