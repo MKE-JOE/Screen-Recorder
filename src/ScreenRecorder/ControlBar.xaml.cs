@@ -63,6 +63,9 @@ public partial class ControlBar : Window
         TimeText.Text = time;
     }
 
+    /// <summary>Shows or hides the "falling behind" warning.</summary>
+    public void SetWarning(bool on) => WarnText.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+
     private void OnDrag(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState == MouseButtonState.Pressed)

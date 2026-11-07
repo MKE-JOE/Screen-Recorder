@@ -61,6 +61,9 @@
             <Ellipse x:Name="LiveDot" Width="8" Height="8" Fill="#E5484D" Margin="8,0,5,0" VerticalAlignment="Center" Visibility="Collapsed"/>
             <TextBlock x:Name="TimeText" Text="Ready" Foreground="White" FontFamily="Segoe UI" FontSize="14" FontWeight="SemiBold"
                        VerticalAlignment="Center" MinWidth="64" Margin="6,0,6,0"/>
+            <TextBlock x:Name="WarnText" Text="⚠ PC falling behind" Foreground="#F5A524" FontFamily="Segoe UI" FontSize="12"
+                       FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0" Visibility="Collapsed"
+                       ToolTip="Some frames are being repeated because the PC can't keep up. Closing heavy apps or recording at 30 fps helps."/>
             <Rectangle Width="1" Fill="#4B5563" Margin="2,6"/>
             <Button x:Name="FrameBtn" Style="{StaticResource BarButton}" ToolTip="Hide the capture frame" Click="OnToggleFrame">
                 <Path x:Name="FrameIcon" Style="{StaticResource BarIcon}" Fill="Transparent" Stroke="White" StrokeThickness="1.6"

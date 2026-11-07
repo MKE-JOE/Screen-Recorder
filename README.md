@@ -42,11 +42,13 @@ Get `ScreenRecorder.exe` from the latest release on the [Releases](../../release
 
 - **Recordings:** with **Autosave after Stop** ticked, each recording is saved to `Videos\Screen Recorder\Recording <date time>.mp4`. Unticked (the default), the clip opens in the app unsaved, kept in `%LOCALAPPDATA%\PortableScreenRecorder\Unsaved`; export it to keep it. The temp copy is deleted when you start a new recording, open another video or close the app, and the app asks first if you never exported it.
 - **Exports:** wherever you choose in the Save dialog.
+- **Smoothness report:** `%LOCALAPPDATA%\PortableScreenRecorder\last-recording.txt`, overwritten after each recording.
 - **Encoder:** on first launch the app unpacks its built-in encoder (FFmpeg, about 85 MB) once into `%LOCALAPPDATA%\PortableScreenRecorder`. Delete that folder to remove every trace. If you put an `ffmpeg.exe` next to `ScreenRecorder.exe`, the app uses that one instead.
 
 ## How it works
 
 - **Screen capture:** FFmpeg's `ddagrab` (Desktop Duplication API, GPU-accelerated). If that's unavailable, for example over Remote Desktop or on some hybrid-GPU laptops, it falls back to `gdigrab`.
+- **Smooth recording:** frames are encoded on the graphics card (NVIDIA, Intel or AMD) when one works, and with Desktop Duplication they never leave the GPU. Each frame is timestamped when it was captured, not when FFmpeg got to it. While recording, the app and FFmpeg run above normal priority, exempt from Windows power throttling, with 1 ms timers. If the PC still falls behind, the floating bar shows "⚠ PC falling behind", the status line says how smooth the recording was, and a short report is saved to `%LOCALAPPDATA%\PortableScreenRecorder\last-recording.txt`.
 - **Audio capture:** WASAPI via NAudio, loopback for playback devices. The audio is streamed to FFmpeg over named pipes and paced against the wall clock, so it stays in sync over long recordings.
 - **Pause:** each pause closes a segment. Stop joins the segments losslessly into one MP4.
 - **Text:** rendered by FFmpeg's `drawtext` with the same Windows font used for the preview.

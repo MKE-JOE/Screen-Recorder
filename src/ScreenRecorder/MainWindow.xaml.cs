@@ -250,6 +250,7 @@ public partial class MainWindow : Window
         string work = Path.Combine(Ffmpeg.AppDataDir, "parts", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         _recorder = new Recorder(options, work);
         _recorder.Failed += msg => Dispatcher.BeginInvoke(() => OnRecorderFailed(msg));
+        SetPerformanceMode(true);
 
         SetStatus("Starting…");
         try
@@ -282,10 +283,14 @@ public partial class MainWindow : Window
         try
         {
             var rec = _recorder;
+            var length = rec.Elapsed;
             await rec.FinishAsync(path);
             _recorder = null;
+            rec.WriteReport(Path.Combine(Ffmpeg.AppDataDir, "last-recording.txt"), length);
+            string health = rec.HealthSummary();
             DiscardUnsaved();
-            EndRecordingUi(reason ?? (autoSave ? "Saved " + Path.GetFileName(path) : "Recording ready. It isn't saved yet: export it to keep it."));
+            EndRecordingUi((reason ?? (autoSave ? "Saved " + Path.GetFileName(path) : "Recording ready. It isn't saved yet: export it to keep it."))
+                           + (health == "smooth" ? " · Recording was smooth" : health.Length > 0 ? " · ⚠ " + health : ""));
             LoadVideo(path);
             if (!autoSave) { _unsavedPath = path; _unsavedExported = false; }
         }
@@ -299,8 +304,22 @@ public partial class MainWindow : Window
         if (_closeAfterSave) Close();
     }
 
+    private bool _perfMode;
+
+    /// <summary>While recording: this app (it paces the audio) runs above normal priority, unthrottled, with 1 ms timers.</summary>
+    private void SetPerformanceMode(bool on)
+    {
+        if (on == _perfMode) return;
+        _perfMode = on;
+        if (on) Native.Performance.DisableThrottling(Process.GetCurrentProcess());
+        else Native.Performance.RestoreSelf();
+        Native.Performance.HighResTimers(on);
+    }
+
     private void EndRecordingUi(string status)
     {
+        SetPerformanceMode(false);
+        _bar.SetWarning(false);
         _mode = Mode.Idle;
         _region.SetRecording(false);
         RestoreMainWindow();
@@ -469,6 +488,7 @@ public partial class MainWindow : Window
             var t = _recorder.Elapsed;
             TimerText.Text = t.ToString(@"hh\:mm\:ss");
             UpdateBar();
+            _bar.SetWarning(_mode == Mode.Recording && _recorder.RecentLag > 0.05);
             RecBadgeText.Text = (_mode == Mode.Paused ? "PAUSED " : "REC ") + t.ToString(@"hh\:mm\:ss");
             RecDot.Opacity = _mode == Mode.Paused ? 0.3 : (DateTime.Now.Millisecond < 500 ? 1 : 0.35);
             if (_mode == Mode.Recording && t >= Recorder.MaxDuration)

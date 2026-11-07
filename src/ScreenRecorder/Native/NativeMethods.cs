@@ -118,6 +118,48 @@ internal static class NativeMethods
     }
 }
 
+/// <summary>Keeps the recorder fast while it runs: higher priority, no Windows power throttling, 1 ms timers.</summary>
+internal static class Performance
+{
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_POWER_THROTTLING_STATE { public uint Version, ControlMask, StateMask; }
+
+    private const int ProcessPowerThrottling = 4;
+    private const uint PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetProcessInformation(IntPtr hProcess, int infoClass, ref PROCESS_POWER_THROTTLING_STATE info, int size);
+
+    [DllImport("winmm.dll")] private static extern uint timeBeginPeriod(uint ms);
+    [DllImport("winmm.dll")] private static extern uint timeEndPeriod(uint ms);
+
+    /// <summary>
+    /// Windows 11 runs background and minimized apps in "efficiency mode" on laptops, which slows them down.
+    /// This opts the process out (EXECUTION_SPEED control bit set, state bit clear = never throttle).
+    /// </summary>
+    public static void DisableThrottling(System.Diagnostics.Process p)
+    {
+        try
+        {
+            var st = new PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED, StateMask = 0 };
+            SetProcessInformation(p.Handle, ProcessPowerThrottling, ref st, Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
+        }
+        catch { }
+        try { p.PriorityClass = System.Diagnostics.ProcessPriorityClass.AboveNormal; } catch { }
+    }
+
+    public static void RestoreSelf()
+    {
+        try { System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.Normal; } catch { }
+    }
+
+    /// <summary>1 ms timer resolution for this process while recording (smoother audio pacing).</summary>
+    public static void HighResTimers(bool on)
+    {
+        try { if (on) timeBeginPeriod(1); else timeEndPeriod(1); } catch { }
+    }
+}
+
 internal static class WindowHelpers
 {
     /// <summary>Hide a window from screen capture (Windows 10 2004+). Silently ignored on older builds.</summary>
