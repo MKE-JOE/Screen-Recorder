@@ -1,0 +1,128 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest $env:FFMPEG_URL -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-tmp
+          $exe = Get-ChildItem ffmpeg-tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          New-Item -ItemType Directory -Force src/FfmpegPayload/Assets | Out-Null
+          Copy-Item $exe.FullName src/FfmpegPayload/Assets/ffmpeg.exe
+
+      - name: Check FFmpeg has everything the app uses
+        shell: pwsh
+        run: |
+          $ff = "src/FfmpegPayload/Assets/ffmpeg.exe"
+          $filters = (& $ff -hide_banner -filters) -join "`n"
+          foreach ($n in 'ddagrab','hwdownload','drawtext','palettegen','paletteuse','amix','alimiter','aresample') {
+            if ($filters -notmatch "\s$n\s") { throw "FFmpeg is missing filter $n" }
+          }
+          $enc = (& $ff -hide_banner -encoders) -join "`n"
+          foreach ($n in 'libx264','aac','gif','h264_nvenc','h264_qsv','h264_amf') { if ($enc -notmatch "\s$n\s") { throw "FFmpeg is missing encoder $n" } }
+          $dev = (& $ff -hide_banner -devices) -join "`n"
+          if ($dev -notmatch 'gdigrab') { throw "FFmpeg is missing gdigrab" }
+
+      - name: Smoke-test the export pipeline
+        shell: pwsh
+        run: |
+          $ff = "src/FfmpegPayload/Assets/ffmpeg.exe"
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          Set-Location smoke
+          & "../$ff" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 4 -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 320k src.mp4
+          & "../$ff" -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 4 -c:v libx264 -crf 8 -pix_fmt yuv420p -c:a aac -b:a 320k -ac 2 busy.mp4
+          # A mostly still 1080p60 "screen" with silent audio, like a real desktop recording.
+          & "../$ff" -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=1920x1080:rate=60,trim=end=0.1,loop=-1:1:0,setpts=N/60/TB" -f lavfi -i anullsrc=r=48000:cl=stereo -t 30 -c:v libx264 -crf 18 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 320k still.mp4
+          & "../$ff" -hide_banner -loglevel error -y -i still.mp4 -c copy still.mkv   # MKV has no per-stream bitrates
+          Copy-Item C:\Windows\Fonts\impact.ttf font.ttf
+          Set-Content overlay.txt "Hello" -NoNewline
+          $dt = "drawtext=fontfile=font.ttf:textfile=overlay.txt:expansion=none:fontsize=48:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=20:y_align=font:borderw=3:bordercolor=0x000000"
+          & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -vf "$dt,fps=15,scale=320:-2:flags=lanczos,palettegen=stats_mode=diff" -frames:v 1 -update 1 palette.png
+          & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -i palette.png -filter_complex "[0:v]$dt,fps=15,scale=320:-2:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle[out]" -map "[out]" -loop 0 out.gif
+          if (-not (Test-Path out.gif) -or (Get-Item out.gif).Length -lt 1000) { throw "GIF export failed" }
+          & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -map 0:v:0 -map 0:a? -vf $dt -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 320k out.mkv
+          if (-not (Test-Path out.mkv)) { throw "MKV export failed" }
+
+      - name: Publish single-file exe
+        run: dotnet publish src/ScreenRecorder/ScreenRecorder.csproj -c Release -o publish -p:Version=1.0.${{ github.run_number }}
+
+      - name: Show output
+        shell: pwsh
+        run: Get-ChildItem publish | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Self-test (start the app, unpack FFmpeg, enumerate devices, exit)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest' -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "App did not finish its self-test (hung or showed a dialog)" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "Self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
+      - name: Self-test the GIF editor (load frames, text, crop, boomerang, reduce, undo/redo, export)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-gif', "$PWD/smoke/src.mp4", "$PWD/smoke/editor.gif" -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "GIF editor self-test hung" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "GIF editor self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
+      - name: Self-test the video editor (text caption, crop, resize, file size target, MP4 export)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-video', "$PWD/smoke/busy.mp4", "$PWD/smoke/edited.mp4" -PassThru
+          if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "Video editor self-test hung" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "Video editor self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
+      - name: Self-test the video editor on a still screen recording in MKV (lowest file size)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-video', "$PWD/smoke/still.mkv", "$PWD/smoke/still-small.mp4" -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Video editor self-test hung" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "Video editor self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScreenRecorder-1.0.${{ github.run_number }}
+          path: publish/ScreenRecorder.exe
+
+      - name: Create release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Screen Recorder 1.0.${{ github.run_number }} beta
+          prerelease: true
+          body: |
+            **Beta.** Download **ScreenRecorder.exe** below and run it. No install needed (Windows 10/11, 64-bit).
+
+            The app isn't code-signed yet, so Windows may say "Windows protected your PC". Click **More info**, then **Run anyway**.
+
+            Found a problem? Open an issue and attach `last-recording.txt` and `last-recording-ffmpeg.log` from `%LOCALAPPDATA%\PortableScreenRecorder`.
+          files: publish/ScreenRecorder.exe

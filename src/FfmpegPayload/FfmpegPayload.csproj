@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Holds ffmpeg.exe as an embedded resource. It is a separate assembly so the
+    ~90 MB payload is only loaded (and decompressed from the single-file bundle)
+    the first time the app needs to unpack ffmpeg, not on every start.
+    CI downloads ffmpeg.exe into Assets/ before publishing.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('Assets\ffmpeg.exe')">
+    <EmbeddedResource Include="Assets\ffmpeg.exe" LogicalName="ffmpeg.exe" />
+  </ItemGroup>
+</Project>
