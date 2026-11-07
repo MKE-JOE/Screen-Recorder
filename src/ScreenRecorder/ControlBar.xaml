@@ -1,7 +1,7 @@
 <Window x:Class="ScreenRecorder.ControlBar"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Screen Recorder controls" SizeToContent="WidthAndHeight"
+        Title="ScreenGank controls" SizeToContent="WidthAndHeight"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize" ShowActivated="False">
     <Window.Resources>

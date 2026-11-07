@@ -1,7 +1,7 @@
 <Window x:Class="ScreenRecorder.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Screen Recorder" Width="1140" Height="820" MinWidth="1000" MinHeight="640"
+        Title="ScreenGank" Width="1140" Height="820" MinWidth="1000" MinHeight="640"
         Background="{StaticResource WindowBg}" FontFamily="Segoe UI" FontSize="13"
         WindowStartupLocation="CenterScreen" Icon="Assets/app.ico">
     <Grid Margin="14">
@@ -40,7 +40,7 @@
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4" VerticalAlignment="Center">
                     <CheckBox x:Name="AutoSaveCheck" Content="Autosave after Stop" Margin="16,0,0,0" VerticalAlignment="Center"
                               Checked="OnAutoSaveChanged" Unchecked="OnAutoSaveChanged"
-                              ToolTip="Save every recording to Videos\Screen Recorder when you stop. When off, the clip opens here unsaved: export it to keep it."/>
+                              ToolTip="Save every recording to Videos\ScreenGank when you stop. When off, the clip opens here unsaved: export it to keep it."/>
                     <CheckBox x:Name="MinimizeCheck" Content="Minimize while recording" IsChecked="True" Margin="16,0,0,0"
                               VerticalAlignment="Center" ToolTip="Hide this window while recording. Use the floating bar or hotkeys to pause and stop."/>
                 </StackPanel>
@@ -61,7 +61,7 @@
                     <TextBlock Foreground="#E5E7EB" FontSize="18" HorizontalAlignment="Center"
                                Text="Place the frame over what you want to record, then press Record."/>
                     <TextBlock Foreground="#9CA3AF" Margin="0,6,0,0" HorizontalAlignment="Center"
-                               Text="Autosaved clips are stored at Videos\Screen Recorder. All completed recordings will open here for export and editing."/>
+                               Text="Autosaved clips are stored at Videos\ScreenGank. All completed recordings will open here for export and editing."/>
                 </StackPanel>
 
                 <Border x:Name="RecBadge" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"
