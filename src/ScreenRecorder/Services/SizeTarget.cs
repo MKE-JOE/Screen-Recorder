@@ -124,7 +124,7 @@ public static class SizeTarget
         double audioUse = src.HasAudio ? Math.Min(audio, Rates(src).Audio) : 0;
         // A keyframe every 10 s instead of every ~4 s: screen content is mostly still, and keyframes are
         // the expensive part at low bitrates.
-        return new Budget(Math.Max((int)MinVideoKbps, (int)(total - audioUse)), audio, (int)Math.Round(Math.Clamp(src.Fps, 10, 120) * 10));
+        return new Budget(Math.Max(20, (int)(total - audioUse)), audio, (int)Math.Round(Math.Clamp(src.Fps, 10, 120) * 10));
     }
 
     /// <summary>Short description of the original's bitrates, shown when the slider can't go lower.</summary>

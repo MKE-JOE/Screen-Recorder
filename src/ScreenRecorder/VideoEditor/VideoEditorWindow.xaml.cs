@@ -719,11 +719,14 @@ public partial class VideoEditorWindow : Window
             OnLayerPlace(new Button { Tag = "bottom" }, new RoutedEventArgs());
             CurrentLayer!.StartSec = 0.5;
             CurrentLayer.EndSec = 2;
-            CropCombo.SelectedIndex = 2;   // square
-            SizeCombo.SelectedIndex = 3;   // 480p (no-op upscale guard on small clips)
-            // Short busy clip: trim to 3 s at 60%. Long, mostly still clip (like a real screen recording): keep it
-            // all and go to the lowest size the slider allows.
+            // Short busy clip: crop, resize, trim to 3 s at 60%. Long, mostly still clip (like a real screen
+            // recording): keep it whole and go to the lowest size the slider allows.
             bool longClip = _duration > 10;
+            if (!longClip)
+            {
+                CropCombo.SelectedIndex = 2;   // square
+                SizeCombo.SelectedIndex = 3;   // 480p
+            }
             if (!longClip) { _start = 0.5; _end = 3.5; }
             await LoadInfoAsync();
             SyncTrim();
