@@ -107,9 +107,12 @@ public partial class MainWindow : Window
             }
             if (App.SelfTest)
             {
+                // A typical still-screen recording (5 MB, 30 s, 1080p60 with audio) must be shrinkable well below 100%.
+                double floor = SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 30, 60, true, 5_000_000), 30, 1920, 1080);
+                if (floor > 50) App.Fail($"File size floor too high for a typical screen recording: {floor}%");
                 var displays = Displays.GetAll();
                 var target = Displays.Resolve(_region.GetCaptureRect());
-                App.Pass($"ffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +
+                App.Pass($"sizeFloor={floor}%\nffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +
                          $"playback={AudioCombo.Items.Count} mics={MicCombo.Items.Count}");
             }
         }

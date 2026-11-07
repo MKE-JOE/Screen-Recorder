@@ -14,7 +14,7 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
   - Video: H.264 at the full resolution of the area, 30 or 60 fps, near-lossless (CRF 18).
   - Audio: **AAC-LC, 320 kbps, 48 kHz stereo**. Plays on practically every device and app.
 - **Export** to **MP4, MKV or GIF**. GIFs use a two-pass, optimised palette, and you can choose their width and frame rate.
-- **File size slider** (MP4/MKV): slide left for a smaller file and see the projected size as you go. Below 100% the video is re-encoded in two passes to land on that size. It stops at 25% of the original, or higher if needed to keep a minimum bitrate for the resolution and frame rate, so the result never looks blocky.
+- **File size slider** (MP4/MKV): slide left for a smaller file and see the projected size as you go. Below 100% the video is re-encoded in two passes to land on that size. The video can go down to 25% of its original bitrate (never below 150 kbps), and audio steps down from 320k to no less than 160k only when it would take over a quarter of the file.
 - Every format has two buttons: **Export…** saves the clip straight away with the default settings (GIFs are capped at 15 seconds; longer clips start from the playhead), and **Open in editor…** opens it in an editor first.
 - **Video editor** (MP4 or MKV, then *Open in editor…*): a simple editor that keeps full quality.
   - Preview with play/pause, a scrub bar and ±5 s skip. Set the start and end to trim. Trimming and text now live only in the editors.

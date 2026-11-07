@@ -11,7 +11,7 @@ public sealed record VideoInfo(int Width, int Height, double Duration, double Fp
 
 /// <summary>
 /// The "File size" slider: pick a percentage of the original size and the video is encoded (two-pass) to hit it.
-/// A floor keeps the result from looking bad: never below 25% of the original, and never below a minimum
+/// A floor keeps the result from looking bad: video never below 25% of the original bitrate or a small minimum
 /// bitrate for the output resolution and frame rate.
 /// </summary>
 public static class SizeTarget
@@ -19,10 +19,10 @@ public static class SizeTarget
     public const double MinPercent = 25;
     public const int AudioKbps = 320;
     /// <summary>
-    /// Safety net in bits per pixel per frame: about 370 kbps for 1080p at 30 fps. Screen recordings are mostly
-    /// still, so they need far less than camera footage; the 25%-of-original rule does most of the work.
+    /// Lowest video bitrate we ever aim for. The main rule is 25% of the original's video bitrate: the original was
+    /// recorded at CRF 18, so its bitrate already reflects how busy the content is (a still screen needs very little).
     /// </summary>
-    private const double MinBitsPerPixel = 0.006;
+    private const double MinVideoKbps = 150;
     /// <summary>Container overhead allowance so the file lands at or just under the target.</summary>
     private const double Overhead = 0.98;
 
@@ -54,14 +54,14 @@ public static class SizeTarget
 
     /// <summary>
     /// Smallest percentage the slider allows (25–100). The video part may drop to 25% of its original bitrate, but
-    /// never below a small bits-per-pixel safety net; audio steps down from 320k to no less than 160k AAC.
+    /// never below 150 kbps; audio steps down from 320k to no less than 160k AAC.
     /// </summary>
     public static double FloorPercent(VideoInfo src, double length, int outW, int outH)
     {
         double srcKbps = SourceBytes(src, length) * 8 / 1000 / Math.Max(0.1, length);
         double audioSrc = src.HasAudio ? Math.Min(AudioKbps, srcKbps * 0.5) : 0;
         double videoSrc = Math.Max(1, srcKbps - audioSrc);
-        double minVideo = Math.Max(videoSrc * MinPercent / 100, MinBitsPerPixel * outW * outH * Math.Min(src.Fps, 60) / 1000);
+        double minVideo = Math.Max(videoSrc * MinPercent / 100, MinVideoKbps);
         double total = minVideo;
         if (src.HasAudio) { total += 160; total = minVideo + AudioFor(total); }
         double pct = total / Overhead / srcKbps * 100;
