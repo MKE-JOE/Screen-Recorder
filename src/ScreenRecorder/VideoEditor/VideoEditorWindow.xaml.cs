@@ -519,28 +519,25 @@ public partial class VideoEditorWindow : Window
 
     private bool _sizeSync;
 
-    /// <summary>
-    /// Estimated size at full quality: the original's bytes for the kept time, scaled by how many pixels remain
-    /// after crop/resize. The slider is a percentage of this.
-    /// </summary>
-    private double FullQualityBytes()
+    /// <summary>How much of the original video bitrate a crop/resize still needs (smaller frames need fewer bits).</summary>
+    private double PixelFactor()
     {
-        if (_info == null) return 0;
+        if (_info == null) return 1;
         var (w, h) = OutputDimensions();
         double pixels = Math.Clamp((double)w * h / Math.Max(1, _info.Width * _info.Height), 0.05, 1);
-        double videoShare = SizeTarget.SourceBytes(_info, _end - _start);
-        return videoShare * (0.15 + 0.85 * pixels);   // smaller frames need fewer bits, but not proportionally fewer
+        return 0.15 + 0.85 * pixels;
     }
+
+    /// <summary>Estimated size at full quality for the kept time and output size. The slider is a percentage of this.</summary>
+    private double FullQualityBytes() =>
+        _info == null ? 0 : SizeTarget.FullKbps(_info, PixelFactor()) * 1000 / 8 * (_end - _start);
 
     private void UpdateFileSize()
     {
         if (FileSizeSlider == null || FileSizeText == null) return;
         if (_info == null || !_ready || _end <= _start) { FileSizeSlider.IsEnabled = false; return; }
-        var (w, h) = OutputDimensions();
-        double full = FullQualityBytes();
         // Same floor rule as the main screen, measured against the full-quality size of this edit.
-        double floor = SizeTarget.FloorPercent(_info with { Bytes = (long)full, Duration = _end - _start },
-            _end - _start, w, h);
+        double floor = SizeTarget.FloorPercent(_info, PixelFactor());
         _sizeSync = true;
         FileSizeSlider.Minimum = floor;
         if (FileSizeSlider.Value < floor) FileSizeSlider.Value = floor;
@@ -567,7 +564,7 @@ public partial class VideoEditorWindow : Window
     {
         if (_info == null || FileSizeSlider.Value >= 99.5) return null;
         double bytes = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
-        return SizeTarget.Plan(bytes, _end - _start, _info.HasAudio);
+        return SizeTarget.Plan(bytes, _end - _start, _info);
     }
 
     // ------------------------------------------------------------------ export
@@ -724,11 +721,15 @@ public partial class VideoEditorWindow : Window
             CurrentLayer.EndSec = 2;
             CropCombo.SelectedIndex = 2;   // square
             SizeCombo.SelectedIndex = 3;   // 480p (no-op upscale guard on small clips)
-            _start = 0.5; _end = 3.5;
+            // Short busy clip: trim to 3 s at 60%. Long, mostly still clip (like a real screen recording): keep it
+            // all and go to the lowest size the slider allows.
+            bool longClip = _duration > 10;
+            if (!longClip) { _start = 0.5; _end = 3.5; }
             await LoadInfoAsync();
             SyncTrim();
             if (FileSizeSlider.Minimum >= 100) App.Fail("File size slider has no range on the test clip");
-            FileSizeSlider.Value = Math.Max(FileSizeSlider.Minimum, 60);
+            if (longClip && FileSizeSlider.Minimum > 50) App.Fail($"File size floor too high on a still clip: {FileSizeSlider.Minimum}%");
+            FileSizeSlider.Value = longClip ? FileSizeSlider.Minimum : Math.Max(FileSizeSlider.Minimum, 60);
             double expected = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
             var kbps = TargetBudget();
             if (!await ExportToAsync(output, ExportFormat.Mp4)) App.Fail("Video editor export returned false");

@@ -52,6 +52,8 @@ jobs:
           Set-Location smoke
           & "../$ff" -hide_banner -loglevel error -y -f lavfi -i testsrc=size=640x360:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 4 -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 320k src.mp4
           & "../$ff" -hide_banner -loglevel error -y -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 4 -c:v libx264 -crf 8 -pix_fmt yuv420p -c:a aac -b:a 320k -ac 2 busy.mp4
+          # A mostly still 1080p60 "screen" with silent audio, like a real desktop recording.
+          & "../$ff" -hide_banner -loglevel error -y -f lavfi -i "testsrc2=size=1920x1080:rate=60,trim=end=0.1,loop=-1:1:0,setpts=N/60/TB" -f lavfi -i anullsrc=r=48000:cl=stereo -t 30 -c:v libx264 -crf 18 -preset veryfast -pix_fmt yuv420p -c:a aac -b:a 320k still.mp4
           Copy-Item C:\Windows\Fonts\impact.ttf font.ttf
           Set-Content overlay.txt "Hello" -NoNewline
           $dt = "drawtext=fontfile=font.ttf:textfile=overlay.txt:expansion=none:fontsize=48:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=20:y_align=font:borderw=3:bordercolor=0x000000"
@@ -91,6 +93,15 @@ jobs:
         run: |
           $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-video', "$PWD/smoke/busy.mp4", "$PWD/smoke/edited.mp4" -PassThru
           if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "Video editor self-test hung" }
+          Get-Content publish/selftest.log
+          if ($p.ExitCode -ne 0) { throw "Video editor self-test failed with exit code $($p.ExitCode)" }
+          Remove-Item publish/selftest.log
+
+      - name: Self-test the video editor on a still screen recording (lowest file size)
+        shell: pwsh
+        run: |
+          $p = Start-Process publish/ScreenRecorder.exe -ArgumentList '--selftest-video', "$PWD/smoke/still.mp4", "$PWD/smoke/still-small.mp4" -PassThru
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Video editor self-test hung" }
           Get-Content publish/selftest.log
           if ($p.ExitCode -ne 0) { throw "Video editor self-test failed with exit code $($p.ExitCode)" }
           Remove-Item publish/selftest.log

@@ -3,16 +3,16 @@ using System.Text.RegularExpressions;
 
 namespace ScreenRecorder.Services;
 
-/// <summary>What FFmpeg reports about a video file.</summary>
 /// <summary>Bitrates for a size-targeted encode.</summary>
-public sealed record Budget(int VideoKbps, int AudioKbps);
+public sealed record Budget(int VideoKbps, int AudioKbps, int Gop);
 
-public sealed record VideoInfo(int Width, int Height, double Duration, double Fps, bool HasAudio, long Bytes);
+/// <summary>What FFmpeg reports about a video file. Stream bitrates are null when the container doesn't say (MKV).</summary>
+public sealed record VideoInfo(int Width, int Height, double Duration, double Fps, bool HasAudio, long Bytes,
+    double? VideoKbps = null, double? AudioKbps = null);
 
 /// <summary>
 /// The "File size" slider: pick a percentage of the original size and the video is encoded (two-pass) to hit it.
-/// A floor keeps the result from looking bad: video never below 25% of the original bitrate or a small minimum
-/// bitrate for the output resolution and frame rate.
+/// A floor keeps the result from looking bad: video never below 25% of the original video bitrate.
 /// </summary>
 public static class SizeTarget
 {
@@ -22,9 +22,15 @@ public static class SizeTarget
     /// Lowest video bitrate we ever aim for. The main rule is 25% of the original's video bitrate: the original was
     /// recorded at CRF 18, so its bitrate already reflects how busy the content is (a still screen needs very little).
     /// </summary>
-    private const double MinVideoKbps = 150;
-    /// <summary>Container overhead allowance so the file lands at or just under the target.</summary>
-    private const double Overhead = 0.98;
+    private const double MinVideoKbps = 50;
+    /// <summary>Small safety margin so the file lands at or just under the target.</summary>
+    private const double Overhead = 0.99;
+
+    /// <summary>
+    /// MP4/MKV index and packet headers cost a roughly fixed amount per frame, which matters at low bitrates
+    /// (about 13 kbps for 60 fps with audio).
+    /// </summary>
+    private static double ContainerKbps(VideoInfo src) => (Math.Min(src.Fps, 120) * 20 + (src.HasAudio ? 47 * 10 : 0)) * 8 / 1000.0;
 
     public static async Task<VideoInfo?> ProbeAsync(string path)
     {
@@ -42,8 +48,12 @@ public static class SizeTarget
                     + double.Parse(d.Groups[3].Value, CultureInfo.InvariantCulture);
             var f = Regex.Match(info, @"Video:.*?, (\d+(?:\.\d+)?) fps");
             double fps = f.Success ? double.Parse(f.Groups[1].Value, CultureInfo.InvariantCulture) : 30;
+            var vk = Regex.Match(info, @"Video:[^\n]*?(\d+) kb/s");
+            var ak = Regex.Match(info, @"Audio:[^\n]*?(\d+) kb/s");
             return new VideoInfo(int.Parse(v.Groups[1].Value), int.Parse(v.Groups[2].Value), dur, fps,
-                info.Contains("Audio:", StringComparison.Ordinal), new FileInfo(path).Length);
+                info.Contains("Audio:", StringComparison.Ordinal), new FileInfo(path).Length,
+                vk.Success ? double.Parse(vk.Groups[1].Value, CultureInfo.InvariantCulture) : null,
+                ak.Success ? double.Parse(ak.Groups[1].Value, CultureInfo.InvariantCulture) : null);
         }
         catch { return null; }
     }
@@ -53,30 +63,53 @@ public static class SizeTarget
         src.Duration > 0 ? src.Bytes * Math.Min(1, length / src.Duration) : src.Bytes;
 
     /// <summary>
-    /// Smallest percentage the slider allows (25–100). The video part may drop to 25% of its original bitrate, but
-    /// never below 150 kbps; audio steps down from 320k to no less than 160k AAC.
+    /// The original's video and audio bitrates (kbps). Uses what the file reports; otherwise splits the overall
+    /// bitrate with a modest guess for audio. Silent recordings have almost no audio data, so this matters.
     /// </summary>
-    public static double FloorPercent(VideoInfo src, double length, int outW, int outH)
+    public static (double Video, double Audio) Rates(VideoInfo src)
     {
-        double srcKbps = SourceBytes(src, length) * 8 / 1000 / Math.Max(0.1, length);
-        double audioSrc = src.HasAudio ? Math.Min(AudioKbps, srcKbps * 0.5) : 0;
-        double videoSrc = Math.Max(1, srcKbps - audioSrc);
-        double minVideo = Math.Max(videoSrc * MinPercent / 100, MinVideoKbps);
-        double total = minVideo;
-        if (src.HasAudio) { total += 160; total = minVideo + AudioFor(total); }
-        double pct = total / Overhead / srcKbps * 100;
+        double total = src.Duration > 0 ? src.Bytes * 8 / 1000.0 / src.Duration : 1000;
+        double audio = !src.HasAudio ? 0 : src.AudioKbps ?? Math.Min(AudioKbps, total * 0.3);
+        double video = src.VideoKbps ?? Math.Max(1, total - audio);
+        return (Math.Max(1, video), audio);
+    }
+
+    /// <summary>
+    /// Smallest percentage the slider allows (25–100): video down to 25% of its original bitrate (at least 50 kbps),
+    /// audio down to 160k AAC (or less if the original audio already used less, e.g. silence).
+    /// <paramref name="pixelFactor"/> scales the video bitrate for a crop/resize in the editor.
+    /// </summary>
+    public static double FloorPercent(VideoInfo src, double pixelFactor = 1)
+    {
+        var (video, audio) = Rates(src);
+        video *= pixelFactor;
+        double minVideo = Math.Max(video * MinPercent / 100, MinVideoKbps);
+        double minAudio = Math.Min(160, audio);
+        double c = ContainerKbps(src);
+        double pct = (minVideo + minAudio + c) / Overhead / (video + audio + c) * 100;
         return Math.Clamp(Math.Ceiling(Math.Max(MinPercent, pct)), MinPercent, 100);
+    }
+
+    /// <summary>Overall bitrate at full quality (kbps), with the video part scaled by <paramref name="pixelFactor"/>.</summary>
+    public static double FullKbps(VideoInfo src, double pixelFactor = 1)
+    {
+        var (video, audio) = Rates(src);
+        return video * pixelFactor + audio + ContainerKbps(src);
     }
 
     /// <summary>AAC bitrate for a total budget: full 320k unless it would take more than a quarter of the file.</summary>
     private static int AudioFor(double totalKbps) => totalKbps >= 1280 ? 320 : totalKbps >= 700 ? 192 : 160;
 
     /// <summary>Video and audio bitrates that make the whole file about <paramref name="targetBytes"/>.</summary>
-    public static Budget Plan(double targetBytes, double length, bool hasAudio)
+    public static Budget Plan(double targetBytes, double length, VideoInfo src)
     {
-        double total = targetBytes * Overhead * 8 / 1000 / Math.Max(0.1, length);
-        int audio = hasAudio ? AudioFor(total) : AudioKbps;
-        return new Budget(Math.Max(100, (int)total - (hasAudio ? audio : 0)), audio);
+        double total = targetBytes * Overhead * 8 / 1000 / Math.Max(0.1, length) - ContainerKbps(src);
+        int audio = src.HasAudio ? AudioFor(total) : AudioKbps;
+        // Audio can't use more than it had: silence stays tiny, so the video gets the rest.
+        double audioUse = src.HasAudio ? Math.Min(audio, Rates(src).Audio) : 0;
+        // A keyframe every 10 s instead of every ~4 s: screen content is mostly still, and keyframes are
+        // the expensive part at low bitrates.
+        return new Budget(Math.Max((int)MinVideoKbps, (int)(total - audioUse)), audio, (int)Math.Round(Math.Clamp(src.Fps, 10, 120) * 10));
     }
 
     public static string FormatBytes(double bytes) =>
@@ -107,7 +140,8 @@ public static class SizeTarget
 
         string log = Path.Combine(work, "x264pass");
         var rate = new[] { "-c:v", "libx264", "-preset", "medium", "-b:v", kbps + "k",
-            "-maxrate", kbps * 2 + "k", "-bufsize", kbps * 4 + "k", "-passlogfile", log };
+            "-maxrate", kbps * 2 + "k", "-bufsize", kbps * 4 + "k", "-g", budget.Gop.ToString(CultureInfo.InvariantCulture),
+            "-passlogfile", log };
 
         var p1 = new List<string>(common); p1.AddRange(inputArgs);
         p1.AddRange(rate); p1.AddRange(new[] { "-pass", "1" }); p1.AddRange(color);

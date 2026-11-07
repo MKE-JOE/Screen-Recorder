@@ -107,8 +107,12 @@ public partial class MainWindow : Window
             }
             if (App.SelfTest)
             {
-                // A typical still-screen recording (5 MB, 30 s, 1080p60 with audio) must be shrinkable well below 100%.
-                double floor = SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 30, 60, true, 5_000_000), 30, 1920, 1080);
+                // Typical screen recordings must be shrinkable well below 100%: a busy 5 MB / 30 s clip, and a long,
+                // mostly still one with silent audio (6 MB / 4 min, the case that used to get stuck).
+                double floor = Math.Max(
+                    SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 30, 60, true, 5_000_000)),
+                    Math.Max(SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 240, 60, true, 6_000_000, 195, 2)),
+                             SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 240, 60, true, 6_000_000))));
                 if (floor > 50) App.Fail($"File size floor too high for a typical screen recording: {floor}%");
                 var displays = Displays.GetAll();
                 var target = Displays.Resolve(_region.GetCaptureRect());
@@ -494,7 +498,7 @@ public partial class MainWindow : Window
             FileSizeText.Text = _videoPath == null ? "Original size" : "Measuring…";
             return;
         }
-        double floor = SizeTarget.FloorPercent(_info, ClipLength, _info.Width, _info.Height);
+        double floor = SizeTarget.FloorPercent(_info);
         _syncingUi = true;
         FileSizeSlider.Minimum = floor;
         FileSizeSlider.Value = Math.Max(floor, FileSizeSlider.Value);
@@ -521,7 +525,7 @@ public partial class MainWindow : Window
     {
         if (_info == null || FileSizeSlider.Value >= 99.5) return null;
         double bytes = SizeTarget.SourceBytes(_info, ClipLength) * Math.Round(FileSizeSlider.Value) / 100;
-        return SizeTarget.Plan(bytes, ClipLength, _info.HasAudio);
+        return SizeTarget.Plan(bytes, ClipLength, _info);
     }
 
     /// <summary>GIFs are capped at 15 seconds: longer clips use 15 seconds from the playhead.</summary>
