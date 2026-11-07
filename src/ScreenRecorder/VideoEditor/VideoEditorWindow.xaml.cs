@@ -544,7 +544,7 @@ public partial class VideoEditorWindow : Window
         _sizeSync = false;
         FileSizeSlider.IsEnabled = floor < 100 && !_busy;
         FileSizeHint.Text = floor >= 100
-            ? "Already as small as it can be without losing quality."
+            ? $"Already as small as it can be without losing quality ({SizeTarget.Describe(_info)})."
             : $"Slide left for a smaller file, down to {floor:0}%. Lower than that and quality would suffer.";
         OnFileSizeChanged(this, null!);
     }
@@ -727,15 +727,18 @@ public partial class VideoEditorWindow : Window
             if (!longClip) { _start = 0.5; _end = 3.5; }
             await LoadInfoAsync();
             SyncTrim();
-            if (FileSizeSlider.Minimum >= 100) App.Fail("File size slider has no range on the test clip");
-            if (longClip && FileSizeSlider.Minimum > 50) App.Fail($"File size floor too high on a still clip: {FileSizeSlider.Minimum}%");
+            string probe = $"{_info?.Width}x{_info?.Height} {_info?.Fps}fps {_info?.Duration:0.0}s {_info?.Bytes}B, {(_info == null ? "no info" : SizeTarget.Describe(_info))}";
+            if (_info == null) App.Fail("Could not read the test clip's details");
+            if (SizeTarget.FloorPercent(_info) > 50) App.Fail($"Main-screen floor too high: {SizeTarget.FloorPercent(_info)}% ({probe})");
+            if (FileSizeSlider.Minimum >= 100) App.Fail($"File size slider has no range on the test clip ({probe})");
+            if (longClip && FileSizeSlider.Minimum > 75) App.Fail($"Editor floor too high on a still clip: {FileSizeSlider.Minimum}% ({probe})");
             FileSizeSlider.Value = longClip ? FileSizeSlider.Minimum : Math.Max(FileSizeSlider.Minimum, 60);
             double expected = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
             var kbps = TargetBudget();
             if (!await ExportToAsync(output, ExportFormat.Mp4)) App.Fail("Video editor export returned false");
             var (w, h) = OutputDimensions();
             long size = new FileInfo(output).Length;
-            string report = $"video size={size} expected={expected:0} ({FileSizeText.Text}) budget={kbps} out={w}x{h}";
+            string report = $"[{probe}] floor={FileSizeSlider.Minimum}% video size={size} expected={expected:0} ({FileSizeText.Text}) budget={kbps} out={w}x{h}";
             if (Math.Abs(size - expected) > expected * 0.2) App.Fail("Two-pass size missed the target: " + report);
             App.Pass(report);
         }

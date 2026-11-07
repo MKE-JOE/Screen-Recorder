@@ -97,7 +97,8 @@ public static class SizeTarget
     {
         var (video, audio) = Rates(src);
         video *= pixelFactor;
-        double minVideo = Math.Max(video * MinPercent / 100, MinVideoKbps);
+        // 50 kbps minimum, but a clip that's already below that can still shrink a little.
+        double minVideo = Math.Max(video * MinPercent / 100, Math.Min(MinVideoKbps, video * 0.6));
         double minAudio = Math.Min(160, audio);
         double c = ContainerKbps(src);
         double pct = (minVideo + minAudio + c) / Overhead / (video + audio + c) * 100;
@@ -124,6 +125,13 @@ public static class SizeTarget
         // A keyframe every 10 s instead of every ~4 s: screen content is mostly still, and keyframes are
         // the expensive part at low bitrates.
         return new Budget(Math.Max((int)MinVideoKbps, (int)(total - audioUse)), audio, (int)Math.Round(Math.Clamp(src.Fps, 10, 120) * 10));
+    }
+
+    /// <summary>Short description of the original's bitrates, shown when the slider can't go lower.</summary>
+    public static string Describe(VideoInfo src)
+    {
+        var (video, audio) = Rates(src);
+        return $"video {video:0} kbps" + (src.HasAudio ? $", audio {audio:0} kbps" : "");
     }
 
     public static string FormatBytes(double bytes) =>

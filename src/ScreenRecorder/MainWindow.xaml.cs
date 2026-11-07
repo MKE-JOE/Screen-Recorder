@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private string? _videoPath, _lastExport;
     private double _duration;
     private VideoInfo? _info;
+    private bool _probeDone;
     private int _videoW, _videoH;
 
     private static string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Screen Recorder");
@@ -385,6 +386,7 @@ public partial class MainWindow : Window
         _videoPath = path;
         _isPlaying = false;
         _info = null;
+        _probeDone = false;
         UpdateFileSize();
         _ = ProbeAsync(path);
         Media.Volume = 0;
@@ -484,6 +486,7 @@ public partial class MainWindow : Window
         var info = await SizeTarget.ProbeAsync(path);
         if (_videoPath != path) return;
         _info = info;
+        _probeDone = true;
         UpdateFileSize();
     }
 
@@ -494,7 +497,8 @@ public partial class MainWindow : Window
         if (_info == null || ClipLength <= 0)
         {
             FileSizeSlider.IsEnabled = false;
-            FileSizeText.Text = _videoPath == null ? "Original size" : "Measuring…";
+            FileSizeText.Text = _videoPath == null ? "Original size" : _probeDone ? "Size unknown" : "Measuring…";
+            if (_probeDone && _videoPath != null) FileSizeHint.Text = "Couldn't read this video's details, so it can only be exported at its original size.";
             return;
         }
         double floor = SizeTarget.FloorPercent(_info);
@@ -504,7 +508,7 @@ public partial class MainWindow : Window
         _syncingUi = false;
         FileSizeSlider.IsEnabled = floor < 100;
         FileSizeHint.Text = floor >= 100
-            ? "This recording is already as small as it can be without losing quality."
+            ? $"This recording is already as small as it can be without losing quality ({SizeTarget.Describe(_info)})."
             : $"Slide left for a smaller file, down to {floor:0}% of the original. Lower than that and quality would suffer.";
         OnFileSizeChanged(this, null!);
     }
