@@ -563,11 +563,11 @@ public partial class VideoEditorWindow : Window
     }
 
     /// <summary>Two-pass bitrate for the slider, or null at 100% (CRF 18 best quality).</summary>
-    private int? TargetKbps()
+    private Budget? TargetBudget()
     {
         if (_info == null || FileSizeSlider.Value >= 99.5) return null;
         double bytes = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
-        return SizeTarget.VideoKbps(bytes, _end - _start, _info.HasAudio);
+        return SizeTarget.Plan(bytes, _end - _start, _info.HasAudio);
     }
 
     // ------------------------------------------------------------------ export
@@ -645,7 +645,7 @@ public partial class VideoEditorWindow : Window
         var active = _layers.Where(l => !string.IsNullOrWhiteSpace(l.Text) && l.EndSec > _start && l.StartSec < _end).ToList();
         bool crop = !_cropPreset.IsOff;
         bool scale = outH != ((int)area.Height & ~1);
-        int? kbps = TargetKbps();
+        var kbps = TargetBudget();
 
         if (active.Count == 0 && !crop && !scale)
         {
@@ -653,7 +653,7 @@ public partial class VideoEditorWindow : Window
             await Exporter.ExportAsync(new ExportOptions
             {
                 Input = _opt.Input, Output = output, Format = format,
-                Start = _start, End = _end, SourceDuration = _duration, SourceWidth = _w, VideoKbps = kbps,
+                Start = _start, End = _end, SourceDuration = _duration, SourceWidth = _w, Budget = kbps,
             }, progress, ct);
             return;
         }
@@ -730,11 +730,11 @@ public partial class VideoEditorWindow : Window
             if (FileSizeSlider.Minimum >= 100) App.Fail("File size slider has no range on the test clip");
             FileSizeSlider.Value = Math.Max(FileSizeSlider.Minimum, 60);
             double expected = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
-            int? kbps = TargetKbps();
+            var kbps = TargetBudget();
             if (!await ExportToAsync(output, ExportFormat.Mp4)) App.Fail("Video editor export returned false");
             var (w, h) = OutputDimensions();
             long size = new FileInfo(output).Length;
-            string report = $"video size={size} expected={expected:0} ({FileSizeText.Text}) kbps={kbps} out={w}x{h}";
+            string report = $"video size={size} expected={expected:0} ({FileSizeText.Text}) budget={kbps} out={w}x{h}";
             if (Math.Abs(size - expected) > expected * 0.2) App.Fail("Two-pass size missed the target: " + report);
             App.Pass(report);
         }

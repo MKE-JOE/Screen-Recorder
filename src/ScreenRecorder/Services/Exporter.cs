@@ -54,7 +54,7 @@ public sealed class ExportOptions
     public int GifWidth { get; init; } = 640;
     public int SourceWidth { get; init; }
     /// <summary>MP4/MKV: target video bitrate from the File size slider. Null keeps full quality.</summary>
-    public int? VideoKbps { get; init; }
+    public Budget? Budget { get; init; }
 }
 
 public static class Exporter
@@ -97,7 +97,7 @@ public static class Exporter
                 return;
             }
 
-            if (!trimmed && drawtext == null && o.VideoKbps == null)
+            if (!trimmed && drawtext == null && o.Budget == null)
             {
                 // Nothing to change: copy the streams untouched (instant, lossless).
                 var a = new List<string>(common); a.AddRange(seek);
@@ -110,7 +110,7 @@ public static class Exporter
 
             var input = new List<string>(seek) { "-map", "0:v:0", "-map", "0:a?" };
             if (drawtext != null) input.AddRange(new[] { "-vf", drawtext });
-            await SizeTarget.EncodeAsync(input, o.Output, o.Format, o.VideoKbps, length, work, progress, ct);
+            await SizeTarget.EncodeAsync(input, o.Output, o.Format, o.Budget, length, work, progress, ct);
         }
         catch
         {

@@ -514,11 +514,11 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Video bitrate for the slider's setting, or null at 100% (keep the original).</summary>
-    private int? TargetKbps()
+    private Budget? TargetBudget()
     {
         if (_info == null || FileSizeSlider.Value >= 99.5) return null;
         double bytes = SizeTarget.SourceBytes(_info, ClipLength) * Math.Round(FileSizeSlider.Value) / 100;
-        return SizeTarget.VideoKbps(bytes, ClipLength, _info.HasAudio);
+        return SizeTarget.Plan(bytes, ClipLength, _info.HasAudio);
     }
 
     /// <summary>GIFs are capped at 15 seconds: longer clips use 15 seconds from the playhead.</summary>
@@ -575,7 +575,7 @@ public partial class MainWindow : Window
             GifFps = int.Parse((string)((ComboBoxItem)GifFpsCombo.SelectedItem).Tag),
             GifWidth = int.Parse((string)((ComboBoxItem)GifWidthCombo.SelectedItem).Tag),
             SourceWidth = _info?.Width ?? _videoW,
-            VideoKbps = fmt == ExportFormat.Gif ? null : TargetKbps(),
+            Budget = fmt == ExportFormat.Gif ? null : TargetBudget(),
         };
 
         PausePlayback();

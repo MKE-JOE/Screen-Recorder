@@ -4,6 +4,9 @@ using System.Text.RegularExpressions;
 namespace ScreenRecorder.Services;
 
 /// <summary>What FFmpeg reports about a video file.</summary>
+/// <summary>Bitrates for a size-targeted encode.</summary>
+public sealed record Budget(int VideoKbps, int AudioKbps);
+
 public sealed record VideoInfo(int Width, int Height, double Duration, double Fps, bool HasAudio, long Bytes);
 
 /// <summary>
@@ -15,8 +18,11 @@ public static class SizeTarget
 {
     public const double MinPercent = 25;
     public const int AudioKbps = 320;
-    /// <summary>Lowest bits per pixel per frame we allow. About 2.5 Mbps for 1080p at 30 fps.</summary>
-    private const double MinBitsPerPixel = 0.04;
+    /// <summary>
+    /// Safety net in bits per pixel per frame: about 370 kbps for 1080p at 30 fps. Screen recordings are mostly
+    /// still, so they need far less than camera footage; the 25%-of-original rule does most of the work.
+    /// </summary>
+    private const double MinBitsPerPixel = 0.006;
     /// <summary>Container overhead allowance so the file lands at or just under the target.</summary>
     private const double Overhead = 0.98;
 
@@ -46,18 +52,32 @@ public static class SizeTarget
     public static double SourceBytes(VideoInfo src, double length) =>
         src.Duration > 0 ? src.Bytes * Math.Min(1, length / src.Duration) : src.Bytes;
 
-    /// <summary>Smallest percentage the slider allows for this clip at this output size (25–100).</summary>
+    /// <summary>
+    /// Smallest percentage the slider allows (25–100). The video part may drop to 25% of its original bitrate, but
+    /// never below a small bits-per-pixel safety net; audio steps down from 320k to no less than 160k AAC.
+    /// </summary>
     public static double FloorPercent(VideoInfo src, double length, int outW, int outH)
     {
-        double minKbps = MinBitsPerPixel * outW * outH * Math.Min(src.Fps, 60) / 1000 + (src.HasAudio ? AudioKbps : 0);
-        double floorBytes = minKbps * 1000 / 8 * length / Overhead;
-        double pct = floorBytes / Math.Max(1, SourceBytes(src, length)) * 100;
+        double srcKbps = SourceBytes(src, length) * 8 / 1000 / Math.Max(0.1, length);
+        double audioSrc = src.HasAudio ? Math.Min(AudioKbps, srcKbps * 0.5) : 0;
+        double videoSrc = Math.Max(1, srcKbps - audioSrc);
+        double minVideo = Math.Max(videoSrc * MinPercent / 100, MinBitsPerPixel * outW * outH * Math.Min(src.Fps, 60) / 1000);
+        double total = minVideo;
+        if (src.HasAudio) { total += 160; total = minVideo + AudioFor(total); }
+        double pct = total / Overhead / srcKbps * 100;
         return Math.Clamp(Math.Ceiling(Math.Max(MinPercent, pct)), MinPercent, 100);
     }
 
-    /// <summary>Video bitrate (kbps) that makes the whole file about <paramref name="targetBytes"/>.</summary>
-    public static int VideoKbps(double targetBytes, double length, bool hasAudio) =>
-        Math.Max(100, (int)(targetBytes * Overhead * 8 / 1000 / Math.Max(0.1, length)) - (hasAudio ? AudioKbps : 0));
+    /// <summary>AAC bitrate for a total budget: full 320k unless it would take more than a quarter of the file.</summary>
+    private static int AudioFor(double totalKbps) => totalKbps >= 1280 ? 320 : totalKbps >= 700 ? 192 : 160;
+
+    /// <summary>Video and audio bitrates that make the whole file about <paramref name="targetBytes"/>.</summary>
+    public static Budget Plan(double targetBytes, double length, bool hasAudio)
+    {
+        double total = targetBytes * Overhead * 8 / 1000 / Math.Max(0.1, length);
+        int audio = hasAudio ? AudioFor(total) : AudioKbps;
+        return new Budget(Math.Max(100, (int)total - (hasAudio ? audio : 0)), audio);
+    }
 
     public static string FormatBytes(double bytes) =>
         bytes >= 1024 * 1024 * 1024 ? $"{bytes / 1024 / 1024 / 1024:0.00} GB"
@@ -66,17 +86,17 @@ public static class SizeTarget
 
     /// <summary>
     /// Encodes H.264 + AAC. <paramref name="inputArgs"/> holds the inputs, filters and -map options.
-    /// With <paramref name="videoKbps"/> null it uses CRF 18 (best quality); otherwise a two-pass encode at that bitrate.
+    /// With <paramref name="budget"/> null it uses CRF 18 (best quality); otherwise a two-pass encode at those bitrates.
     /// </summary>
-    public static async Task EncodeAsync(IReadOnlyList<string> inputArgs, string output, ExportFormat format, int? videoKbps,
+    public static async Task EncodeAsync(IReadOnlyList<string> inputArgs, string output, ExportFormat format, Budget? budget,
         double length, string work, IProgress<double>? progress, CancellationToken ct)
     {
         var common = new List<string> { "-hide_banner", "-nostats", "-loglevel", "error", "-progress", "pipe:1", "-y" };
         var color = new[] { "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709" };
-        var audio = new[] { "-c:a", "aac", "-b:a", AudioKbps + "k", "-ar", "48000", "-ac", "2" };
+        var audio = new[] { "-c:a", "aac", "-b:a", (budget?.AudioKbps ?? AudioKbps) + "k", "-ar", "48000", "-ac", "2" };
         var mux = format == ExportFormat.Mp4 ? new[] { "-movflags", "+faststart" } : Array.Empty<string>();
 
-        if (videoKbps is not int kbps)
+        if (budget is not { VideoKbps: var kbps })
         {
             var a = new List<string>(common); a.AddRange(inputArgs);
             a.AddRange(new[] { "-c:v", "libx264", "-preset", "medium", "-crf", "18" });
