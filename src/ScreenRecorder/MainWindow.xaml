@@ -15,24 +15,35 @@
         <!-- ===== Capture settings ===== -->
         <Border Style="{StaticResource Card}" Padding="12,10">
             <WrapPanel x:Name="CapturePanel" VerticalAlignment="Center">
-                <TextBlock Style="{StaticResource Label}" Text="Capture"/>
-                <ComboBox x:Name="CaptureCombo" Width="290" Margin="0,0,10,4" SelectionChanged="OnCaptureModeChanged"/>
-                <TextBlock Style="{StaticResource Label}" Text="Size"/>
-                <ComboBox x:Name="SizeCombo" Width="150" Margin="0,0,16,4" SelectionChanged="OnSizePresetChanged"/>
-                <TextBlock Style="{StaticResource Label}" Text="Frame rate"/>
-                <ComboBox x:Name="FpsCombo" Width="80" Margin="0,0,16,4">
-                    <ComboBoxItem Content="30 fps" Tag="30" IsSelected="True"/>
-                    <ComboBoxItem Content="60 fps" Tag="60"/>
-                </ComboBox>
-                <TextBlock Style="{StaticResource Label}" Text="Audio source"/>
-                <ComboBox x:Name="AudioCombo" Width="360" Margin="0,0,6,4"
-                          ToolTip="System sound records what plays on that device. Pick a microphone, or system sound plus a microphone, to record your voice."/>
-                <Button Content="↻" Width="32" Margin="0,0,0,4" ToolTip="Refresh devices and displays" Click="OnRefreshDevices"/>
-                <CheckBox x:Name="AutoSaveCheck" Content="Autosave after Stop" Margin="16,0,0,4" VerticalAlignment="Center"
-                          Checked="OnAutoSaveChanged" Unchecked="OnAutoSaveChanged"
-                          ToolTip="Save every recording to Videos\Screen Recorder when you stop. When off, the clip opens here unsaved: export it to keep it."/>
-                <CheckBox x:Name="MinimizeCheck" Content="Minimize while recording" IsChecked="True" Margin="16,0,0,4"
-                          VerticalAlignment="Center" ToolTip="Hide this window while recording. Use the floating bar or hotkeys to pause and stop."/>
+                <!-- Each label stays on the same line as its control when the row wraps. -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,10,4">
+                    <TextBlock Style="{StaticResource Label}" Text="Capture"/>
+                    <ComboBox x:Name="CaptureCombo" Width="290" SelectionChanged="OnCaptureModeChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                    <TextBlock Style="{StaticResource Label}" Text="Size"/>
+                    <ComboBox x:Name="SizeCombo" Width="150" SelectionChanged="OnSizePresetChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,16,4">
+                    <TextBlock Style="{StaticResource Label}" Text="Frame rate"/>
+                    <ComboBox x:Name="FpsCombo" Width="80">
+                        <ComboBoxItem Content="30 fps" Tag="30" IsSelected="True"/>
+                        <ComboBoxItem Content="60 fps" Tag="60"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Style="{StaticResource Label}" Text="Audio source"/>
+                    <ComboBox x:Name="AudioCombo" Width="360" Margin="0,0,6,0"
+                              ToolTip="System sound records what plays on that device. Pick a microphone, or system sound plus a microphone, to record your voice."/>
+                    <Button Content="↻" Width="32" ToolTip="Refresh devices and displays" Click="OnRefreshDevices"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4" VerticalAlignment="Center">
+                    <CheckBox x:Name="AutoSaveCheck" Content="Autosave after Stop" Margin="16,0,0,0" VerticalAlignment="Center"
+                              Checked="OnAutoSaveChanged" Unchecked="OnAutoSaveChanged"
+                              ToolTip="Save every recording to Videos\Screen Recorder when you stop. When off, the clip opens here unsaved: export it to keep it."/>
+                    <CheckBox x:Name="MinimizeCheck" Content="Minimize while recording" IsChecked="True" Margin="16,0,0,0"
+                              VerticalAlignment="Center" ToolTip="Hide this window while recording. Use the floating bar or hotkeys to pause and stop."/>
+                </StackPanel>
             </WrapPanel>
         </Border>
 
