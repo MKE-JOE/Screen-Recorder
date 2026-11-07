@@ -24,10 +24,9 @@
                     <ComboBoxItem Content="30 fps" Tag="30" IsSelected="True"/>
                     <ComboBoxItem Content="60 fps" Tag="60"/>
                 </ComboBox>
-                <TextBlock Style="{StaticResource Label}" Text="Audio"/>
-                <ComboBox x:Name="AudioCombo" Width="240" Margin="0,0,10,4" ToolTip="Sound playing on this device is recorded"/>
-                <TextBlock Style="{StaticResource Label}" Text="Mic"/>
-                <ComboBox x:Name="MicCombo" Width="190" Margin="0,0,6,4"/>
+                <TextBlock Style="{StaticResource Label}" Text="Audio source"/>
+                <ComboBox x:Name="AudioCombo" Width="360" Margin="0,0,6,4"
+                          ToolTip="System sound records what plays on that device. Pick a microphone, or system sound plus a microphone, to record your voice."/>
                 <Button Content="↻" Width="32" Margin="0,0,0,4" ToolTip="Refresh devices and displays" Click="OnRefreshDevices"/>
                 <CheckBox x:Name="MinimizeCheck" Content="Minimize while recording" IsChecked="True" Margin="16,0,0,4"
                           VerticalAlignment="Center" ToolTip="Hide this window while recording. Use the floating bar or hotkeys to pause and stop."/>

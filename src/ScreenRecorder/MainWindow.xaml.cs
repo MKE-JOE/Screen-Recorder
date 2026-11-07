@@ -117,7 +117,7 @@ public partial class MainWindow : Window
                 var displays = Displays.GetAll();
                 var target = Displays.Resolve(_region.GetCaptureRect());
                 App.Pass($"sizeFloor={floor}%\nffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +
-                         $"playback={AudioCombo.Items.Count} mics={MicCombo.Items.Count}");
+                         $"audioSources={AudioCombo.Items.Count}");
             }
         }
         catch (Exception ex)
@@ -141,14 +141,11 @@ public partial class MainWindow : Window
 
     private async Task LoadAudioDevicesAsync()
     {
-        string? audioId = (AudioCombo.SelectedItem as AudioDeviceItem)?.Id;
-        string? micId = (MicCombo.SelectedItem as AudioDeviceItem)?.Id;
-        var playback = await AudioDevices.GetPlaybackDevicesAsync();
-        var mics = await AudioDevices.GetMicrophonesAsync();
-        AudioCombo.ItemsSource = playback;
-        MicCombo.ItemsSource = mics;
-        AudioCombo.SelectedItem = playback.FirstOrDefault(d => audioId != null && d.Id == audioId) ?? playback[0];
-        MicCombo.SelectedItem = mics.FirstOrDefault(d => micId != null && d.Id == micId) ?? mics[0];
+        var prev = AudioCombo.SelectedItem as AudioSourceItem;
+        var sources = await AudioDevices.GetSourcesAsync();
+        AudioCombo.ItemsSource = sources;
+        AudioCombo.SelectedItem = sources.FirstOrDefault(i => prev != null && i.SystemId == prev.SystemId && i.MicId == prev.MicId)
+                                  ?? sources[0];
     }
 
     private async void OnRefreshDevices(object sender, RoutedEventArgs e)
@@ -231,8 +228,8 @@ public partial class MainWindow : Window
         {
             Target = target,
             Fps = int.Parse((string)((ComboBoxItem)FpsCombo.SelectedItem).Tag),
-            SystemAudioDeviceId = (AudioCombo.SelectedItem as AudioDeviceItem)?.Id,
-            MicrophoneDeviceId = (MicCombo.SelectedItem as AudioDeviceItem)?.Id,
+            SystemAudioDeviceId = (AudioCombo.SelectedItem as AudioSourceItem)?.SystemId,
+            MicrophoneDeviceId = (AudioCombo.SelectedItem as AudioSourceItem)?.MicId,
         };
         string work = Path.Combine(Ffmpeg.AppDataDir, "parts", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         _recorder = new Recorder(options, work);
