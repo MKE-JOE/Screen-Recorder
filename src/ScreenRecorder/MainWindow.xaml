@@ -1,6 +1,7 @@
 <Window x:Class="ScreenRecorder.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:ScreenRecorder.Controls"
         Title="ScreenGank" Width="1140" Height="820" MinWidth="1000" MinHeight="640"
         Background="{StaticResource WindowBg}" FontFamily="Segoe UI" FontSize="13"
         WindowStartupLocation="CenterScreen" Icon="Assets/app.ico">
@@ -109,29 +110,8 @@
                                 ToolTip="Record (3-second countdown)" Click="OnRecord" Background="White">
                             <Ellipse Width="22" Height="22" Fill="{StaticResource RecordRed}"/>
                         </Button>
-                        <Button x:Name="StartButton" Style="{StaticResource TransportButton}" ToolTip="Jump to clip start" Click="OnJumpStart">
-                            <Path Style="{StaticResource Icon}" Data="M0,0 H2.5 V12 H0 Z M12,0 L3.5,6 L12,12 Z"/>
-                        </Button>
-                        <RepeatButton x:Name="RewindButton" Style="{StaticResource TransportButton}" ToolTip="Rewind 5 seconds (hold to scan)"
-                                      Delay="400" Interval="150" Click="OnRewind">
-                            <Path Style="{StaticResource Icon}" Data="M14,0 L7,6 L14,12 Z M7,0 L0,6 L7,12 Z"/>
-                        </RepeatButton>
-                        <Button x:Name="PlayButton" Style="{StaticResource TransportButton}" ToolTip="Play" Click="OnPlay">
-                            <Path Style="{StaticResource Icon}" Data="M0,0 L10,6 L0,12 Z" Margin="3,0,0,0"/>
-                        </Button>
-                        <Button x:Name="PauseButton" Style="{StaticResource TransportButton}" ToolTip="Pause / resume" Click="OnPause">
-                            <Path Style="{StaticResource Icon}" Data="M0,0 H3.5 V12 H0 Z M6.5,0 H10 V12 H6.5 Z"/>
-                        </Button>
-                        <Button x:Name="StopButton" Style="{StaticResource TransportButton}" ToolTip="Stop" Click="OnStop">
-                            <Path Style="{StaticResource Icon}" Data="M0,0 H10 V10 H0 Z" Width="14" Height="14"/>
-                        </Button>
-                        <RepeatButton x:Name="ForwardButton" Style="{StaticResource TransportButton}" ToolTip="Fast-forward 5 seconds (hold to scan)"
-                                      Delay="400" Interval="150" Click="OnForward">
-                            <Path Style="{StaticResource Icon}" Data="M0,0 L7,6 L0,12 Z M7,0 L14,6 L7,12 Z"/>
-                        </RepeatButton>
-                        <Button x:Name="EndButton" Style="{StaticResource TransportButton}" ToolTip="Jump to clip end" Click="OnJumpEnd">
-                            <Path Style="{StaticResource Icon}" Data="M0,0 L8.5,6 L0,12 Z M9.5,0 H12 V12 H9.5 Z"/>
-                        </Button>
+                        <controls:TransportControls x:Name="Transport" JumpStart="OnJumpStart" Rewind="OnRewind" Play="OnPlay"
+                                                    Pause="OnPause" Stop="OnStop" Forward="OnForward" JumpEnd="OnJumpEnd"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">

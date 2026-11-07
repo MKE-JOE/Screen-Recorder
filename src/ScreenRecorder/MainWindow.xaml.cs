@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Transport.PauseButton.ToolTip = "Pause / resume";
         _tick.Tick += OnTick;
         _region.CaptureRectChanged += (_, _) => OnRegionChanged();
 
@@ -341,7 +342,7 @@ public partial class MainWindow : Window
     {
         if (_recorder != null && _mode == Mode.Recording)
         {
-            PauseButton.IsEnabled = false;
+            Transport.PauseButton.IsEnabled = false;
             await _recorder.PauseAsync();
             _mode = Mode.Paused;
             SetStatus("Paused. Press Pause again to resume.");
@@ -349,7 +350,7 @@ public partial class MainWindow : Window
         }
         else if (_recorder != null && _mode == Mode.Paused)
         {
-            PauseButton.IsEnabled = false;
+            Transport.PauseButton.IsEnabled = false;
             try
             {
                 await _recorder.ResumeAsync();
@@ -745,10 +746,10 @@ public partial class MainWindow : Window
         CapturePanel.IsEnabled = idle;
         SizeCombo.IsEnabled = idle && AreaMode;
         RecordButton.IsEnabled = idle && _ffmpegReady;
-        PlayButton.IsEnabled = idle && hasVideo;
-        RewindButton.IsEnabled = ForwardButton.IsEnabled = StartButton.IsEnabled = EndButton.IsEnabled = idle && hasVideo;
-        PauseButton.IsEnabled = _mode is Mode.Recording or Mode.Paused || (idle && hasVideo);
-        StopButton.IsEnabled = _mode is Mode.Countdown or Mode.Recording or Mode.Paused || (idle && hasVideo);
+        Transport.PlayButton.IsEnabled = idle && hasVideo;
+        Transport.RewindButton.IsEnabled = Transport.ForwardButton.IsEnabled = Transport.StartButton.IsEnabled = Transport.EndButton.IsEnabled = idle && hasVideo;
+        Transport.PauseButton.IsEnabled = _mode is Mode.Recording or Mode.Paused || (idle && hasVideo);
+        Transport.StopButton.IsEnabled = _mode is Mode.Countdown or Mode.Recording or Mode.Paused || (idle && hasVideo);
         Timeline.IsEnabled = idle && hasVideo;
         EditPanel.IsEnabled = _mode is Mode.Idle or Mode.Exporting;
         ExportButton.IsEnabled = idle && hasVideo;

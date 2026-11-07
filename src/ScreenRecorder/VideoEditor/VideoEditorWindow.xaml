@@ -1,6 +1,7 @@
 <Window x:Class="ScreenRecorder.VideoEditor.VideoEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:ScreenRecorder.Controls"
         Title="Video Editor" Width="1200" Height="800" MinWidth="980" MinHeight="640"
         Background="{StaticResource WindowBg}" FontFamily="Segoe UI" FontSize="13"
         WindowStartupLocation="CenterOwner" Icon="/Assets/app.ico">
@@ -53,12 +54,10 @@
                         <TextBlock x:Name="DurationText" Grid.Column="2" Text="0:00.0" HorizontalAlignment="Right" VerticalAlignment="Center"
                                    Foreground="{StaticResource TextMuted}"/>
                     </Grid>
+                    <controls:TransportControls x:Name="Transport" Margin="0,8,0,0" HorizontalAlignment="Center"
+                                                JumpStart="OnJumpStart" Rewind="OnBack" Play="OnPlay" Pause="OnPause"
+                                                Stop="OnStop" Forward="OnForward" JumpEnd="OnJumpEnd"/>
                     <DockPanel Margin="0,8,0,0">
-                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                            <Button x:Name="PlayButton" Content="▶ Play" Width="84" Click="OnPlayPause"/>
-                            <RepeatButton Content="−5 s" Margin="6,0,0,0" Delay="400" Interval="150" Click="OnBack"/>
-                            <RepeatButton Content="+5 s" Margin="4,0,0,0" Delay="400" Interval="150" Click="OnForward"/>
-                        </StackPanel>
                         <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                             <Button Content="Set start here" Click="OnSetStart"/>
                             <Button Content="Set end here" Margin="4,0,0,0" Click="OnSetEnd"/>

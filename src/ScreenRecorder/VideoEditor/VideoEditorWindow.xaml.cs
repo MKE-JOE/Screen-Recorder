@@ -61,6 +61,9 @@ public partial class VideoEditorWindow : Window
     public VideoEditorWindow(VideoEditorOptions options)
     {
         InitializeComponent();
+        Transport.StartButton.ToolTip = "Jump to trim start (press again for the start of the recording)";
+        Transport.EndButton.ToolTip = "Jump to trim end (press again for the end of the recording)";
+        Transport.StopButton.ToolTip = "Stop and go back to trim start";
         _opt = options;
         LayerFont.ItemsSource = FontChoice.All;
         LayerColor.ItemsSource = TextColor.All;
@@ -200,22 +203,27 @@ public partial class VideoEditorWindow : Window
         SyncTimeline(pos);
     }
 
-    private void OnPlayPause(object sender, RoutedEventArgs e)
+    private void OnPlay(object sender, RoutedEventArgs e)
     {
-        if (_playing) { Pause(); return; }
-        if (!_previewOk) return;
+        if (_playing || !_previewOk) return;
         if (Position < _start || Position >= _end - 0.05) Seek(_start);
         Media.Play();
         _playing = true;
-        PlayButton.Content = "❚❚ Pause";
     }
+
+    private void OnPause(object sender, RoutedEventArgs e) => Pause();
 
     private void Pause()
     {
         Media.Pause();
         _playing = false;
-        PlayButton.Content = "▶ Play";
     }
+
+    private void OnStop(object sender, RoutedEventArgs e) { Pause(); Seek(_start); }
+
+    // Jump to the trim point; pressing again when already there goes to the very start/end of the recording.
+    private void OnJumpStart(object sender, RoutedEventArgs e) => Seek(Position > _start + 0.05 ? _start : 0);
+    private void OnJumpEnd(object sender, RoutedEventArgs e) { Pause(); Seek(Position < _end - 0.05 ? _end : _duration); }
 
     private void OnBack(object sender, RoutedEventArgs e) => Seek(Position - 5);
     private void OnForward(object sender, RoutedEventArgs e) => Seek(Position + 5);

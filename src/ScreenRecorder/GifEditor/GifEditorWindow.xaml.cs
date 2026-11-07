@@ -68,6 +68,10 @@ public partial class GifEditorWindow : Window
         LoopCombo.ItemsSource = LoopChoice.All;
         LoopCombo.SelectedIndex = 0;
         _play.Tick += OnPlayTick;
+        Transport.RewindButton.ToolTip = "Previous frame (hold to scan)";
+        Transport.ForwardButton.ToolTip = "Next frame (hold to scan)";
+        Transport.StartButton.ToolTip = "Jump to first frame";
+        Transport.EndButton.ToolTip = "Jump to last frame";
         Loaded += OnLoaded;
         Closing += OnClosing;
     }
@@ -223,14 +227,22 @@ public partial class GifEditorWindow : Window
         if (e.Key == Key.Delete) { OnDelete(sender, e); e.Handled = true; }
     }
 
-    private void OnPlayPause(object sender, RoutedEventArgs e)
+    private void OnPlay(object sender, RoutedEventArgs e)
     {
-        if (_play.IsEnabled) { _play.Stop(); PlayButton.Content = "▶ Play"; return; }
-        if (_frames.Count == 0) return;
-        _play.Interval = TimeSpan.FromMilliseconds(_frames[_current].DelayMs);
+        if (_play.IsEnabled || _frames.Count == 0) return;
+        _play.Interval = TimeSpan.FromMilliseconds(Math.Max(20, _frames[_current].DelayMs));
         _play.Start();
-        PlayButton.Content = "❚❚ Pause";
     }
+
+    private void OnPause(object sender, RoutedEventArgs e) => _play.Stop();
+    private void OnStop(object sender, RoutedEventArgs e) { _play.Stop(); ShowFrame(0); }
+
+    private void OnJumpStart(object sender, RoutedEventArgs e) => ShowFrame(0);
+    private void OnJumpEnd(object sender, RoutedEventArgs e) { _play.Stop(); ShowFrame(_frames.Count - 1); }
+
+    // A GIF is at most 15 s, so rewind / fast-forward step one frame at a time (hold to scan).
+    private void OnPrevFrame(object sender, RoutedEventArgs e) { _play.Stop(); ShowFrame(_current - 1); }
+    private void OnNextFrame(object sender, RoutedEventArgs e) { _play.Stop(); ShowFrame(_current + 1); }
 
     private void OnPlayTick(object? sender, EventArgs e)
     {
@@ -660,7 +672,6 @@ public partial class GifEditorWindow : Window
         if (dlg.ShowDialog(this) != true) return;
 
         _play.Stop();
-        PlayButton.Content = "▶ Play";
         SetBusy(true);
         _exportCts = new CancellationTokenSource();
         ExportProgress.Value = 0;
