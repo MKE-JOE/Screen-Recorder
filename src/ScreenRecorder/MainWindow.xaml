@@ -28,6 +28,9 @@
                 <ComboBox x:Name="AudioCombo" Width="360" Margin="0,0,6,4"
                           ToolTip="System sound records what plays on that device. Pick a microphone, or system sound plus a microphone, to record your voice."/>
                 <Button Content="↻" Width="32" Margin="0,0,0,4" ToolTip="Refresh devices and displays" Click="OnRefreshDevices"/>
+                <CheckBox x:Name="AutoSaveCheck" Content="Autosave after Stop" Margin="16,0,0,4" VerticalAlignment="Center"
+                          Checked="OnAutoSaveChanged" Unchecked="OnAutoSaveChanged"
+                          ToolTip="Save every recording to Videos\Screen Recorder when you stop. When off, the clip opens here unsaved: export it to keep it."/>
                 <CheckBox x:Name="MinimizeCheck" Content="Minimize while recording" IsChecked="True" Margin="16,0,0,4"
                           VerticalAlignment="Center" ToolTip="Hide this window while recording. Use the floating bar or hotkeys to pause and stop."/>
             </WrapPanel>
@@ -47,7 +50,7 @@
                     <TextBlock Foreground="#E5E7EB" FontSize="18" HorizontalAlignment="Center"
                                Text="Place the frame over what you want to record, then press Record."/>
                     <TextBlock Foreground="#9CA3AF" Margin="0,6,0,0" HorizontalAlignment="Center"
-                               Text="Recordings are saved to Videos\Screen Recorder and open here for export and editing."/>
+                               Text="Autosaved clips are stored at Videos\Screen Recorder. Every recording opens here for export and editing."/>
                 </StackPanel>
 
                 <Border x:Name="RecBadge" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center"

@@ -603,6 +603,7 @@ public partial class VideoEditorWindow : Window
         {
             await RenderAsync(output, format, new Progress<double>(v => ExportProgress.Value = v), _exportCts.Token);
             _lastSaved = output;
+            (Owner as MainWindow)?.MarkClipKept();
             ShowFileButton.Visibility = Visibility.Visible;
             double mb = new FileInfo(output).Length / 1024.0 / 1024.0;
             ExportText.Text = $"Saved {Path.GetFileName(output)} ({mb:0.0} MB).";

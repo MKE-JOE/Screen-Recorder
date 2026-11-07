@@ -677,6 +677,7 @@ public partial class GifEditorWindow : Window
             long bytes = new FileInfo(dlg.FileName).Length;
             double mb = bytes / 1024.0 / 1024.0;
             _lastSaved = dlg.FileName;
+            (Owner as MainWindow)?.MarkClipKept();
             ShowFileButton.Visibility = Visibility.Visible;
             ExportText.Text = $"Saved {Path.GetFileName(dlg.FileName)}: {mb:0.0} MB. " + mb switch
             {

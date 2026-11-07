@@ -45,6 +45,11 @@ public partial class MainWindow : Window
     private bool _probeDone;
     private int _videoW, _videoH;
 
+    /// <summary>Where recordings wait when autosave is off. Cleared of old leftovers at startup.</summary>
+    private static string UnsavedDir => Path.Combine(Ffmpeg.AppDataDir, "Unsaved");
+    /// <summary>The loaded clip if it only exists in <see cref="UnsavedDir"/> and hasn't been exported yet.</summary>
+    private string? _unsavedPath;
+
     private static string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Screen Recorder");
 
     public MainWindow()
@@ -73,6 +78,8 @@ public partial class MainWindow : Window
         _bar.ToggleFrameRequested += ToggleFrame;
         _region.HideRequested += ToggleFrame;
         Closing += OnClosing;
+        AutoSaveCheck.IsChecked = _settings.AutoSave;
+        CleanUnsavedLeftovers();
     }
 
     // ------------------------------------------------------------------ startup
@@ -195,6 +202,7 @@ public partial class MainWindow : Window
     private async void OnRecord(object sender, RoutedEventArgs e)
     {
         if (_mode != Mode.Idle || !_ffmpegReady) return;
+        if (!ConfirmDiscardUnsaved("Start a new recording")) return;
 
         RECT rect = CaptureCombo.SelectedItem is DisplayInfo d ? d.Bounds : _region.GetCaptureRect();
         var target = Displays.Resolve(rect);
@@ -259,14 +267,19 @@ public partial class MainWindow : Window
         SetStatus("Saving recording…");
         UpdateUi();
 
-        string path = Path.Combine(OutputDir, $"Recording {DateTime.Now:yyyy-MM-dd HH-mm-ss}.mp4");
+        bool autoSave = _settings.AutoSave || _closeAfterSave;   // closing mid-recording always keeps the file
+        string dir = autoSave ? OutputDir : UnsavedDir;
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, $"Recording {DateTime.Now:yyyy-MM-dd HH-mm-ss}.mp4");
         try
         {
             var rec = _recorder;
             await rec.FinishAsync(path);
             _recorder = null;
-            EndRecordingUi(reason ?? "Saved " + Path.GetFileName(path));
+            DiscardUnsaved();
+            EndRecordingUi(reason ?? (autoSave ? "Saved " + Path.GetFileName(path) : "Recording ready. It isn't saved yet: export it to keep it."));
             LoadVideo(path);
+            if (!autoSave) _unsavedPath = path;
         }
         catch (Exception ex)
         {
@@ -561,7 +574,7 @@ public partial class MainWindow : Window
             Title = "Export " + ext.ToUpperInvariant(),
             Filter = $"{ext.ToUpperInvariant()} file|*.{ext}",
             DefaultExt = ext,
-            InitialDirectory = Path.GetDirectoryName(_videoPath),
+            InitialDirectory = _unsavedPath != null ? OutputDir : Path.GetDirectoryName(_videoPath),
             FileName = Path.GetFileNameWithoutExtension(_videoPath) + " (export)." + ext,
         };
         if (dlg.ShowDialog(this) != true) return;
@@ -595,6 +608,7 @@ public partial class MainWindow : Window
         {
             await Exporter.ExportAsync(opt, new Progress<double>(v => ExportProgress.Value = v), _exportCts.Token);
             _lastExport = dlg.FileName;
+            MarkClipKept();
             SetStatus($"Exported {Path.GetFileName(dlg.FileName)} ({SizeTarget.FormatBytes(new FileInfo(dlg.FileName).Length)})");
         }
         catch (OperationCanceledException)
@@ -666,12 +680,16 @@ public partial class MainWindow : Window
             Filter = "Videos|*.mp4;*.mkv;*.mov;*.m4v|All files|*.*",
             InitialDirectory = Directory.Exists(OutputDir) ? OutputDir : null,
         };
-        if (dlg.ShowDialog(this) == true) LoadVideo(dlg.FileName);
+        if (dlg.ShowDialog(this) == true && ConfirmDiscardUnsaved("Open another video"))
+        {
+            DiscardUnsaved();
+            LoadVideo(dlg.FileName);
+        }
     }
 
     private void OnShowFolder(object sender, RoutedEventArgs e)
     {
-        string? file = _lastExport ?? _videoPath;
+        string? file = _lastExport ?? (_unsavedPath == null ? _videoPath : null);
         try
         {
             if (file != null && File.Exists(file))
@@ -833,6 +851,7 @@ public partial class MainWindow : Window
             return;
         }
         if (_mode == Mode.Finishing) { e.Cancel = true; _closeAfterSave = true; return; }
+        if (!_closeAfterSave && !ConfirmDiscardUnsaved("Close the app")) { e.Cancel = true; return; }
 
         _exportCts?.Cancel();
         _countdownCts?.Cancel();
@@ -840,6 +859,51 @@ public partial class MainWindow : Window
         _region.Close();
         _bar.Close();
         UnregisterHotkeys();
+        DiscardUnsaved();
+    }
+
+    // ------------------------------------------------------------------ autosave
+
+    private void OnAutoSaveChanged(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        _settings.AutoSave = AutoSaveCheck.IsChecked == true;
+        _settings.Save();
+    }
+
+    /// <summary>Called when the loaded clip has been exported (here or from an editor), so it's no longer at risk.</summary>
+    public void MarkClipKept() => _unsavedPath = null;
+
+    /// <summary>Asks before an unsaved, never-exported recording would be thrown away.</summary>
+    private bool ConfirmDiscardUnsaved(string action)
+    {
+        if (_unsavedPath == null || !File.Exists(_unsavedPath) || App.SelfTest) return true;
+        return MessageBox.Show(this,
+            $"{action}? The current recording hasn't been saved or exported and will be discarded.\n\n" +
+            "To keep it, choose No and press Export… (MP4 at 100% saves it unchanged).",
+            "Unsaved recording", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+    }
+
+    private void DiscardUnsaved()
+    {
+        if (_unsavedPath == null) return;
+        string path = _unsavedPath;
+        _unsavedPath = null;
+        if (_videoPath == path) Media.Close();
+        try { File.Delete(path); } catch { /* still open in an editor: cleaned up on a later start */ }
+    }
+
+    /// <summary>Removes unsaved clips left over from earlier sessions (kept a week in case the app crashed).</summary>
+    private static void CleanUnsavedLeftovers()
+    {
+        try
+        {
+            if (!Directory.Exists(UnsavedDir)) return;
+            foreach (var f in Directory.GetFiles(UnsavedDir))
+                if (File.GetLastWriteTime(f) < DateTime.Now.AddDays(-7))
+                    try { File.Delete(f); } catch { }
+        }
+        catch { }
     }
 
     private static string Fmt(double seconds)
