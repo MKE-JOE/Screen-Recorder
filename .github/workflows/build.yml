@@ -117,6 +117,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Screen Recorder 1.0.${{ github.run_number }}
-          body: Download **ScreenRecorder.exe** below and run it. No install needed (Windows 10/11, 64-bit).
+          name: Screen Recorder 1.0.${{ github.run_number }} beta
+          prerelease: true
+          body: |
+            **Beta.** Download **ScreenRecorder.exe** below and run it. No install needed (Windows 10/11, 64-bit).
+
+            The app isn't code-signed yet, so Windows may say "Windows protected your PC". Click **More info**, then **Run anyway**.
+
+            Found a problem? Open an issue and attach `last-recording.txt` and `last-recording-ffmpeg.log` from `%LOCALAPPDATA%\PortableScreenRecorder`.
           files: publish/ScreenRecorder.exe
