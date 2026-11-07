@@ -5,6 +5,7 @@ namespace ScreenRecorder.Services;
 public sealed record DisplayInfo(int Number, IntPtr Handle, RECT Bounds, bool IsPrimary, string DeviceName)
 {
     public string Label => $"Full screen: Display {Number} ({Bounds.Width}×{Bounds.Height}){(IsPrimary ? ", primary" : "")}";
+    public override string ToString() => Label;
 }
 
 /// <summary>A capture rectangle in physical pixels, resolved to the method FFmpeg should use.</summary>
