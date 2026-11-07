@@ -86,6 +86,25 @@ public sealed class Recorder : IAsyncDisposable
         var parts = _segments.Where(s => File.Exists(s) && new FileInfo(s).Length > 1024).ToList();
         if (parts.Count == 0) throw new InvalidOperationException("Nothing was recorded." + Environment.NewLine + TailLog());
 
+        // Each part's video starts a second or two after its audio (FFmpeg start-up). Cut that lead-in so picture
+        // and sound start together, without a frozen frame at the start of the recording or after a resume.
+        for (int i = 0; i < parts.Count; i++)
+        {
+            double lead = await VideoStartAsync(parts[i]);
+            if (lead < 0.02) continue;
+            string trimmed = Path.ChangeExtension(parts[i], ".trim.mkv");
+            try
+            {
+                await Ffmpeg.RunAsync(new[]
+                {
+                    "-hide_banner", "-loglevel", "error", "-y",
+                    "-ss", Ffmpeg.Num(lead), "-i", parts[i], "-map", "0", "-c", "copy", trimmed,
+                }, _workDir, 0, null, CancellationToken.None);
+                if (new FileInfo(trimmed).Length > 1024) parts[i] = trimmed;
+            }
+            catch { /* keep the untrimmed part */ }
+        }
+
         string list = Path.Combine(_workDir, "parts.txt");
         File.WriteAllLines(list, parts.Select(p => "file '" + p.Replace("'", "'\\''") + "'"));
         await Ffmpeg.RunAsync(new[]
@@ -97,6 +116,42 @@ public sealed class Recorder : IAsyncDisposable
 
         try { Directory.Delete(_workDir, true); } catch { }
         return outputPath;
+    }
+
+    /// <summary>When the video stream of a recorded part starts, in seconds (0 if it can't be read).</summary>
+    private async Task<double> VideoStartAsync(string part)
+    {
+        try
+        {
+            using var p = Ffmpeg.Start(new[]
+            {
+                "-hide_banner", "-loglevel", "error", "-i", part, "-map", "0:v:0", "-c", "copy", "-frames:v", "8", "-f", "framemd5", "-",
+            }, _workDir);
+            var errTask = p.StandardError.ReadToEndAsync();
+            string output = await p.StandardOutput.ReadToEndAsync();
+            await p.WaitForExitAsync();
+            await errTask;
+
+            double tbNum = 1, tbDen = 1000;
+            long? first = null;
+            foreach (var raw in output.Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line.StartsWith("#tb 0:", StringComparison.Ordinal))
+                {
+                    var tb = line[6..].Trim().Split('/');
+                    if (tb.Length == 2) { tbNum = double.Parse(tb[0], CultureInfo.InvariantCulture); tbDen = double.Parse(tb[1], CultureInfo.InvariantCulture); }
+                }
+                else if (line.Length > 0 && line[0] != '#')
+                {
+                    var cols = line.Split(',');
+                    if (cols.Length > 2 && long.TryParse(cols[2].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long pts))
+                        first = first is { } f ? Math.Min(f, pts) : pts;
+                }
+            }
+            return first is { } v && v > 0 ? v * tbNum / tbDen : 0;
+        }
+        catch { return 0; }
     }
 
     private async Task StartSegmentAsync()
@@ -200,25 +255,25 @@ public sealed class Recorder : IAsyncDisposable
         }
         foreach (var p in _pipes) a.AddRange(p.InputArgs(origin));
 
-        // One graph for audio and video, so RTCSTART (the moment the filters start) is the same for both.
+        // Video and audio run in separate filter graphs. In a shared graph FFmpeg only asks Desktop Duplication for
+        // a frame when audio arrives, and audio from the pipes arrives in bursts, so most frames came out as repeats.
+        // Both use the same time zero (origin): video by capture time, audio by sample count.
         var fc = new StringBuilder();
         var afc = new StringBuilder();
         string toYuv = $"scale=out_color_matrix=bt709:out_range=tv,format={_opt.Encoder.PixelFormat}";
         if (_useGdi)
         {
-            fc.Append(CultureInfo.InvariantCulture, $"[0:v]settb=AVTB,setpts=PTS+{originUs}-RTCSTART,{toYuv}[v]");
+            fc.Append($"[0:v]{toYuv}[v]");
         }
         else
         {
             fc.Append(CultureInfo.InvariantCulture,
                 $"ddagrab=output_idx={t.DdaOutputIndex}:framerate={fps}:draw_mouse=1:video_size={t.Width}x{t.Height}:offset_x={t.DdaOffsetX}:offset_y={t.DdaOffsetY}");
             // Timestamps come from the moment Desktop Duplication grabbed each frame (its own PTS), mapped onto the
-            // wall clock the audio uses. The offset between the two clocks is the smallest one seen so far (frames
-            // that reached this filter without delay), allowed to creep up 20 µs per frame to follow clock drift.
-            // Delays later in the pipeline therefore no longer shift frames and cause repeats or drops.
-            // Times are counted from when the filters started (see the audio note below).
+            // wall clock. The offset between the two clocks is the smallest one seen so far (frames that reached this
+            // filter without delay), allowed to creep up 20 µs per frame to follow clock drift.
             fc.Append(CultureInfo.InvariantCulture,
-                $",settb=AVTB,setpts='PTS+st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)))-RTCSTART'");
+                $",settb=AVTB,setpts='PTS+st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)))-{originUs}'");
             if (_opt.Encoder.ZeroCopy)
             {
                 if (!string.IsNullOrEmpty(_opt.Encoder.GpuFilter)) fc.Append(',').Append(_opt.Encoder.GpuFilter);
@@ -227,11 +282,7 @@ public sealed class Recorder : IAsyncDisposable
             else fc.Append($",hwdownload,format=bgra,{toYuv}[v]");
         }
 
-        // The recording starts when the filters start (RTCSTART), not when FFmpeg was launched: FFmpeg takes a second
-        // or two to open everything, and that gap used to be filled by repeating a frame, a visible freeze near the
-        // start of every recording and after every resume. Audio from before that moment is dropped so both line up.
-        string toStereo = string.Create(CultureInfo.InvariantCulture,
-            $"asettb=AVTB,asetpts='PTS+{originUs}-RTCSTART',atrim=start=0,asetpts=PTS,aresample=48000:async=1000:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo");
+        const string toStereo = "aresample=48000:async=1000:first_pts=0,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo";
         if (_pipes.Count == 1)
         {
             afc.Append($"[{audioBase}:a]{toStereo}[a]");
@@ -242,14 +293,14 @@ public sealed class Recorder : IAsyncDisposable
             afc.Append(";[a0][a1]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.98[a]");
         }
 
-        if (afc.Length > 0) fc.Append(';').Append(afc);
-        a.AddRange(new[] { "-filter_complex", fc.ToString(), "-map", "[v]" });
+        a.AddRange(new[] { "-filter_complex", fc.ToString() });
+        if (afc.Length > 0) a.AddRange(new[] { "-filter_complex", afc.ToString() });
+        a.AddRange(new[] { "-map", "[v]" });
         if (_pipes.Count > 0) a.AddRange(new[] { "-map", "[a]" });
 
-        a.AddRange(new[]
-        {
-            "-fps_mode", "cfr", "-r", fps.ToString(),
-        });
+        // Frames keep their capture times. FFmpeg's constant-frame-rate mode would fill the second or two before the
+        // first frame (FFmpeg start-up) with a repeated frame; FinishAsync trims that lead-in instead.
+        a.AddRange(new[] { "-fps_mode", "passthrough" });
         a.AddRange(_opt.Encoder.Args(fps));
         bool gpuFrames = _opt.Encoder.ZeroCopy && !_useGdi;
         if (!gpuFrames) a.AddRange(new[] { "-pix_fmt", _opt.Encoder.PixelFormat });
@@ -275,28 +326,33 @@ public sealed class Recorder : IAsyncDisposable
 
     // ------------------------------------------------------------------ smoothness
 
-    private long _segFrames, _segDup, _segDrop, _doneFrames, _doneDup, _doneDrop;
-    // Repeats in the first couple of seconds of a segment are start-up, not lag: they're left out.
-    private long _segSkipDup = -1, _segSkipDrop;
+    private long _segFrames, _doneFrames;
+    private double _doneExpected, _doneCounted;
+    // The first couple of seconds of a segment are start-up and are left out of the measurement.
+    private (DateTime At, long Frames)? _segBase;
+    private (DateTime At, long Frames) _segLast;
     private DateTime _segStart;
-    private readonly Queue<(DateTime At, long Frames, long Lag)> _history = new();
+    private readonly Queue<(DateTime At, long Frames)> _history = new();
 
-    /// <summary>Frames written, and frames FFmpeg had to repeat or drop because capture/encoding fell behind.</summary>
-    public (long Frames, long Repeated, long Dropped) Health
+    /// <summary>Frames written, and frames that should have been captured in that time but weren't (the PC fell behind).</summary>
+    public (long Frames, long Missed) Health
     {
         get
         {
             lock (_history)
             {
-                bool counted = _segSkipDup >= 0;
-                return (_doneFrames + _segFrames,
-                        _doneDup + (counted ? _segDup - _segSkipDup : 0),
-                        _doneDrop + (counted ? _segDrop - _segSkipDrop : 0));
+                double expected = _doneExpected, got = _doneCounted;
+                if (_segBase is { } b)
+                {
+                    expected += (_segLast.At - b.At).TotalSeconds * _opt.Fps;
+                    got += _segLast.Frames - b.Frames;
+                }
+                return (_doneFrames + _segFrames, (long)Math.Max(0, Math.Round(expected - got)));
             }
         }
     }
 
-    /// <summary>Share of frames over the last ~5 seconds that were repeated or dropped (0–1).</summary>
+    /// <summary>Share of frames missed over the last ~5 seconds (0–1).</summary>
     public double RecentLag
     {
         get
@@ -306,8 +362,9 @@ public sealed class Recorder : IAsyncDisposable
                 if (_history.Count < 2) return 0;
                 var first = _history.Peek();
                 var last = _history.Last();
-                long frames = last.Frames - first.Frames, lag = last.Lag - first.Lag;
-                return frames <= 0 ? 0 : Math.Clamp((double)lag / frames, 0, 1);
+                double expected = (last.At - first.At).TotalSeconds * _opt.Fps;
+                if (expected < _opt.Fps) return 0;   // under a second of data
+                return Math.Clamp(1 - (last.Frames - first.Frames) / expected, 0, 1);
             }
         }
     }
@@ -315,10 +372,10 @@ public sealed class Recorder : IAsyncDisposable
     /// <summary>One line for the user: how smooth the whole recording was.</summary>
     public string HealthSummary()
     {
-        var (frames, dup, drop) = Health;
+        var (frames, missed) = Health;
         if (frames <= 0) return "";
-        double pct = 100.0 * (dup + drop) / Math.Max(1, frames);
-        return pct < 1 ? "smooth" : $"{pct:0.#}% of frames were repeated because the PC fell behind";
+        double pct = 100.0 * missed / Math.Max(1, frames + missed);
+        return pct < 2 ? "smooth" : $"{pct:0.#}% of frames were missed because the PC fell behind";
     }
 
     /// <summary>Saves a short smoothness report for the last recording (helps compare PCs and settings).</summary>
@@ -326,7 +383,7 @@ public sealed class Recorder : IAsyncDisposable
     {
         try
         {
-            var (frames, dup, drop) = Health;
+            var (frames, missed) = Health;
             File.WriteAllText(path, string.Join(Environment.NewLine, new[]
             {
                 $"Recorded: {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
@@ -334,8 +391,7 @@ public sealed class Recorder : IAsyncDisposable
                 $"Area: {_opt.Target.Width}x{_opt.Target.Height} at {_opt.Fps} fps",
                 $"Encoder: {_opt.Encoder}",
                 $"Frames written: {frames}",
-                $"Frames repeated (PC fell behind): {dup}",
-                $"Frames dropped: {drop}",
+                $"Frames missed (PC fell behind): {missed}",
                 $"Result: {HealthSummary()}",
             }) + Environment.NewLine);
         }
@@ -344,43 +400,38 @@ public sealed class Recorder : IAsyncDisposable
 
     private async Task PumpProgress(Process p)
     {
-        lock (_history) { _segFrames = _segDup = _segDrop = 0; _segSkipDup = -1; _segSkipDrop = 0; _segStart = DateTime.UtcNow; _history.Clear(); }
+        lock (_history) { _segFrames = 0; _segBase = null; _segStart = DateTime.UtcNow; _history.Clear(); }
         try
         {
             string? line;
             while ((line = await p.StandardOutput.ReadLineAsync()) != null)
             {
-                int eq = line.IndexOf('=');
-                if (eq <= 0 || !long.TryParse(line.AsSpan(eq + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v)) continue;
-                string key = line[..eq];
+                if (!line.StartsWith("frame=", StringComparison.Ordinal)
+                    || !long.TryParse(line.AsSpan(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v)) continue;
+                if (v > 0) _firstFrame?.TrySetResult(true);
+                var now = DateTime.UtcNow;
                 lock (_history)
                 {
-                    switch (key)
-                    {
-                        case "frame":
-                            _segFrames = v;
-                            if (v > 0) _firstFrame?.TrySetResult(true);
-                            break;
-                        case "dup_frames": _segDup = v; break;
-                        case "drop_frames":
-                            _segDrop = v;
-                            if (DateTime.UtcNow - _segStart < TimeSpan.FromSeconds(2)) break;
-                            if (_segSkipDup < 0) { _segSkipDup = _segDup; _segSkipDrop = _segDrop; }
-                            // drop_frames is the last counter in each progress block: take a sample.
-                            _history.Enqueue((DateTime.UtcNow, _segFrames, _segDup + _segDrop));
-                            while (_history.Count > 2 && DateTime.UtcNow - _history.Peek().At > TimeSpan.FromSeconds(5)) _history.Dequeue();
-                            break;
-                    }
+                    _segFrames = v;
+                    if (now - _segStart < TimeSpan.FromSeconds(2)) continue;
+                    _segBase ??= (now, v);
+                    _segLast = (now, v);
+                    _history.Enqueue((now, v));
+                    while (_history.Count > 2 && now - _history.Peek().At > TimeSpan.FromSeconds(5)) _history.Dequeue();
                 }
             }
         }
         catch { }
         lock (_history)
         {
-            if (_segSkipDup >= 0) { _doneDup += _segDup - _segSkipDup; _doneDrop += _segDrop - _segSkipDrop; }
+            if (_segBase is { } b)
+            {
+                _doneExpected += (_segLast.At - b.At).TotalSeconds * _opt.Fps;
+                _doneCounted += _segLast.Frames - b.Frames;
+            }
             _doneFrames += _segFrames;
-            _segFrames = _segDup = _segDrop = 0;
-            _segSkipDup = -1;
+            _segFrames = 0;
+            _segBase = null;
             _history.Clear();
         }
     }
