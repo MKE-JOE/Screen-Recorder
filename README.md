@@ -13,14 +13,14 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
 - **Quality:**
   - Video: H.264 at the full resolution of the area, 30 or 60 fps, near-lossless (CRF 18).
   - Audio: **AAC-LC, 320 kbps, 48 kHz stereo**. Plays on practically every device and app.
-- **Trim:** set the start and end of the clip before exporting.
-- **Add text:** type text, pick a font, size and colour, and drag it into place on the preview. It's burned into GIF exports, and into MP4/MKV too if you tick the box.
 - **Export** to **MP4, MKV or GIF**. GIFs use a two-pass, optimised palette, and you can choose their width and frame rate.
-- Every format has two buttons: **Export…** saves the clip straight away with the default settings (GIFs are capped at 15 seconds), and **Open in editor…** opens it in an editor first.
+- **File size slider** (MP4/MKV): slide left for a smaller file and see the projected size as you go. Below 100% the video is re-encoded in two passes to land on that size. It stops at 25% of the original, or higher if needed to keep a minimum bitrate for the resolution and frame rate, so the result never looks blocky.
+- Every format has two buttons: **Export…** saves the clip straight away with the default settings (GIFs are capped at 15 seconds; longer clips start from the playhead), and **Open in editor…** opens it in an editor first.
 - **Video editor** (MP4 or MKV, then *Open in editor…*): a simple editor that keeps full quality.
-  - Preview with play/pause, a scrub bar and ±5 s skip. Set the start and end to trim.
+  - Preview with play/pause, a scrub bar and ±5 s skip. Set the start and end to trim. Trimming and text now live only in the editors.
   - **Text captions** that show for the time range you choose ("from here" / "to here"), each with its own font, size, colour and outline. Drag them into place.
   - **Crop** presets (square, portrait 4:5, wide 16:9, story 9:16, free) and **resize** to 1080p, 720p or 480p (never upscales).
+  - The same **File size** slider, measured against the edited clip.
   - Saves as MP4 or MKV with H.264 (CRF 18) and AAC 320 kbps audio. Captions are drawn exactly as they look in the preview.
 - **GIF editor** (choose GIF, then *Open in editor…*): turns up to **15 seconds** of the clip into frames you can edit.
   - Frame strip with thumbnails. Select several frames with Ctrl/Shift to **delete**, **duplicate**, **move** them, or set how long each one shows.

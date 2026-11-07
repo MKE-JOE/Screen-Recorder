@@ -53,6 +53,8 @@ public sealed class ExportOptions
     /// <summary>0 keeps the original width.</summary>
     public int GifWidth { get; init; } = 640;
     public int SourceWidth { get; init; }
+    /// <summary>MP4/MKV: target video bitrate from the File size slider. Null keeps full quality.</summary>
+    public int? VideoKbps { get; init; }
 }
 
 public static class Exporter
@@ -95,26 +97,20 @@ public static class Exporter
                 return;
             }
 
-            var a = new List<string>(common); a.AddRange(seek);
-            a.AddRange(new[] { "-map", "0:v:0", "-map", "0:a?" });
-            if (!trimmed && drawtext == null)
+            if (!trimmed && drawtext == null && o.VideoKbps == null)
             {
                 // Nothing to change: copy the streams untouched (instant, lossless).
-                a.AddRange(new[] { "-c", "copy" });
+                var a = new List<string>(common); a.AddRange(seek);
+                a.AddRange(new[] { "-map", "0:v:0", "-map", "0:a?", "-c", "copy" });
+                if (o.Format == ExportFormat.Mp4) a.AddRange(new[] { "-movflags", "+faststart" });
+                a.Add(o.Output);
+                await Ffmpeg.RunAsync(a, work, length, progress, ct);
+                return;
             }
-            else
-            {
-                if (drawtext != null) a.AddRange(new[] { "-vf", drawtext });
-                a.AddRange(new[]
-                {
-                    "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
-                    "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-                    "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-ac", "2",
-                });
-            }
-            if (o.Format == ExportFormat.Mp4) a.AddRange(new[] { "-movflags", "+faststart" });
-            a.Add(o.Output);
-            await Ffmpeg.RunAsync(a, work, length, progress, ct);
+
+            var input = new List<string>(seek) { "-map", "0:v:0", "-map", "0:a?" };
+            if (drawtext != null) input.AddRange(new[] { "-vf", drawtext });
+            await SizeTarget.EncodeAsync(input, o.Output, o.Format, o.VideoKbps, length, work, progress, ct);
         }
         catch
         {

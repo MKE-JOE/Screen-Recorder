@@ -21,6 +21,8 @@ public sealed class VideoEditorOptions
     public double End { get; init; }
     public ExportFormat Format { get; init; } = ExportFormat.Mp4;
     public TextOverlay? InitialText { get; init; }
+    /// <summary>Starting position of the File size slider (25–100).</summary>
+    public double SizePercent { get; init; } = 100;
 }
 
 /// <summary>Simple video editor: trim, crop, resize and timed captions, exported as high-quality MP4 or MKV.</summary>
@@ -69,6 +71,8 @@ public partial class VideoEditorWindow : Window
         FmtMkv.IsChecked = options.Format == ExportFormat.Mkv;
         _tick.Tick += OnTick;
         Loaded += OnLoaded;
+        Loaded += async (_, _) => await LoadInfoAsync();
+        FileSizeSlider.Value = Math.Clamp(options.SizePercent, 25, 100);
         SidePanel.IsEnabled = false;
         Closing += (_, _) => { _tick.Stop(); _exportCts?.Cancel(); Media.Close(); };
 
@@ -108,26 +112,21 @@ public partial class VideoEditorWindow : Window
         await InitializeFromProbeAsync();
     }
 
+    private VideoInfo? _info;
+
     /// <summary>Reads size and duration from FFmpeg's stream info when the preview can't.</summary>
     private async Task InitializeFromProbeAsync()
     {
         if (_ready) return;
-        int w = 0, h = 0; double dur = _opt.End;
-        try
-        {
-            using var p = Ffmpeg.Start(new[] { "-hide_banner", "-i", _opt.Input });
-            string info = await p.StandardError.ReadToEndAsync();
-            await p.WaitForExitAsync();
-            var d = System.Text.RegularExpressions.Regex.Match(info, @"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)");
-            if (d.Success)
-                dur = int.Parse(d.Groups[1].Value) * 3600 + int.Parse(d.Groups[2].Value) * 60
-                    + double.Parse(d.Groups[3].Value, CultureInfo.InvariantCulture);
-            var v = System.Text.RegularExpressions.Regex.Match(info, @"Video:.*?, (\d{2,5})x(\d{2,5})");
-            if (v.Success) { w = int.Parse(v.Groups[1].Value); h = int.Parse(v.Groups[2].Value); }
-        }
-        catch (Exception ex) { if (SelfTestOutput != null) App.Fail("Video probe failed: " + ex); }
-        if (w <= 0 || h <= 0) { if (SelfTestOutput != null) App.Fail("Video probe found no video stream"); return; }
-        await InitializeAsync(w, h, dur);
+        _info ??= await SizeTarget.ProbeAsync(_opt.Input);
+        if (_info == null) { if (SelfTestOutput != null) App.Fail("Video probe found no video stream"); return; }
+        await InitializeAsync(_info.Width, _info.Height, _info.Duration > 0 ? _info.Duration : _opt.End);
+    }
+
+    private async Task LoadInfoAsync()
+    {
+        _info ??= await SizeTarget.ProbeAsync(_opt.Input);
+        UpdateFileSize();
     }
 
     private async Task InitializeAsync(int w, int h, double duration)
@@ -230,6 +229,7 @@ public partial class VideoEditorWindow : Window
         Timeline.SelectionStart = _start;
         Timeline.SelectionEnd = _end;
         TrimText.Text = $"Keeping {Fmt(_start)} to {Fmt(_end)} ({Fmt(_end - _start)})";
+        UpdateFileSize();
     }
 
     // ------------------------------------------------------------------ text
@@ -457,6 +457,7 @@ public partial class VideoEditorWindow : Window
         if (CropText == null) return;
         var (w, h) = OutputDimensions();
         CropText.Text = $"Output: {w} × {h} px." + (_cropPreset.IsOff ? "" : " Drag the box to move it, the corner to resize.");
+        UpdateFileSize();
     }
 
     private void OnCropMouseDown(object sender, MouseButtonEventArgs e)
@@ -512,6 +513,61 @@ public partial class VideoEditorWindow : Window
         _drag = Drag.None;
         _dragLayer = null;
         Mouse.Capture(null);
+    }
+
+    // ------------------------------------------------------------------ file size
+
+    private bool _sizeSync;
+
+    /// <summary>
+    /// Estimated size at full quality: the original's bytes for the kept time, scaled by how many pixels remain
+    /// after crop/resize. The slider is a percentage of this.
+    /// </summary>
+    private double FullQualityBytes()
+    {
+        if (_info == null) return 0;
+        var (w, h) = OutputDimensions();
+        double pixels = Math.Clamp((double)w * h / Math.Max(1, _info.Width * _info.Height), 0.05, 1);
+        double videoShare = SizeTarget.SourceBytes(_info, _end - _start);
+        return videoShare * (0.15 + 0.85 * pixels);   // smaller frames need fewer bits, but not proportionally fewer
+    }
+
+    private void UpdateFileSize()
+    {
+        if (FileSizeSlider == null || FileSizeText == null) return;
+        if (_info == null || !_ready || _end <= _start) { FileSizeSlider.IsEnabled = false; return; }
+        var (w, h) = OutputDimensions();
+        double full = FullQualityBytes();
+        // Same floor rule as the main screen, measured against the full-quality size of this edit.
+        double floor = SizeTarget.FloorPercent(_info with { Bytes = (long)full, Duration = _end - _start },
+            _end - _start, w, h);
+        _sizeSync = true;
+        FileSizeSlider.Minimum = floor;
+        if (FileSizeSlider.Value < floor) FileSizeSlider.Value = floor;
+        _sizeSync = false;
+        FileSizeSlider.IsEnabled = floor < 100 && !_busy;
+        FileSizeHint.Text = floor >= 100
+            ? "Already as small as it can be without losing quality."
+            : $"Slide left for a smaller file, down to {floor:0}%. Lower than that and quality would suffer.";
+        OnFileSizeChanged(this, null!);
+    }
+
+    private void OnFileSizeChanged(object sender, RoutedPropertyChangedEventArgs<double>? e)
+    {
+        if (_sizeSync || FileSizeText == null || _info == null || !_ready) return;
+        double pct = Math.Round(FileSizeSlider.Value);
+        double bytes = FullQualityBytes() * pct / 100;
+        FileSizeText.Text = pct >= 100
+            ? $"Best quality, about {SizeTarget.FormatBytes(bytes)}"
+            : $"About {SizeTarget.FormatBytes(bytes)} ({pct:0}%)";
+    }
+
+    /// <summary>Two-pass bitrate for the slider, or null at 100% (CRF 18 best quality).</summary>
+    private int? TargetKbps()
+    {
+        if (_info == null || FileSizeSlider.Value >= 99.5) return null;
+        double bytes = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
+        return SizeTarget.VideoKbps(bytes, _end - _start, _info.HasAudio);
     }
 
     // ------------------------------------------------------------------ export
@@ -589,6 +645,7 @@ public partial class VideoEditorWindow : Window
         var active = _layers.Where(l => !string.IsNullOrWhiteSpace(l.Text) && l.EndSec > _start && l.StartSec < _end).ToList();
         bool crop = !_cropPreset.IsOff;
         bool scale = outH != ((int)area.Height & ~1);
+        int? kbps = TargetKbps();
 
         if (active.Count == 0 && !crop && !scale)
         {
@@ -596,7 +653,7 @@ public partial class VideoEditorWindow : Window
             await Exporter.ExportAsync(new ExportOptions
             {
                 Input = _opt.Input, Output = output, Format = format,
-                Start = _start, End = _end, SourceDuration = _duration, SourceWidth = _w,
+                Start = _start, End = _end, SourceDuration = _duration, SourceWidth = _w, VideoKbps = kbps,
             }, progress, ct);
             return;
         }
@@ -605,8 +662,7 @@ public partial class VideoEditorWindow : Window
         Directory.CreateDirectory(work);
         try
         {
-            var args = new List<string> { "-hide_banner", "-nostats", "-loglevel", "error", "-progress", "pipe:1", "-y",
-                "-ss", Ffmpeg.Num(_start), "-t", Ffmpeg.Num(length), "-i", _opt.Input };
+            var args = new List<string> { "-ss", Ffmpeg.Num(_start), "-t", Ffmpeg.Num(length), "-i", _opt.Input };
 
             for (int i = 0; i < active.Count; i++)
             {
@@ -631,16 +687,8 @@ public partial class VideoEditorWindow : Window
             chain.Add("format=yuv420p");
             graph.Append(string.Join(",", chain)).Append("[out]");
 
-            args.AddRange(new[]
-            {
-                "-filter_complex", graph.ToString(), "-map", "[out]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-                "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-                "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-ac", "2",
-            });
-            if (format == ExportFormat.Mp4) args.AddRange(new[] { "-movflags", "+faststart" });
-            args.Add(output);
-            await Ffmpeg.RunAsync(args, work, length, progress, ct);
+            args.AddRange(new[] { "-filter_complex", graph.ToString(), "-map", "[out]", "-map", "0:a?" });
+            await SizeTarget.EncodeAsync(args, output, format, kbps, length, work, progress, ct);
         }
         catch
         {
@@ -677,9 +725,18 @@ public partial class VideoEditorWindow : Window
             CropCombo.SelectedIndex = 2;   // square
             SizeCombo.SelectedIndex = 3;   // 480p (no-op upscale guard on small clips)
             _start = 0.5; _end = 3.5;
+            await LoadInfoAsync();
+            SyncTrim();
+            if (FileSizeSlider.Minimum >= 100) App.Fail("File size slider has no range on the test clip");
+            FileSizeSlider.Value = Math.Max(FileSizeSlider.Minimum, 60);
+            double expected = FullQualityBytes() * Math.Round(FileSizeSlider.Value) / 100;
+            int? kbps = TargetKbps();
             if (!await ExportToAsync(output, ExportFormat.Mp4)) App.Fail("Video editor export returned false");
             var (w, h) = OutputDimensions();
-            App.Pass($"video size={new FileInfo(output).Length} out={w}x{h}");
+            long size = new FileInfo(output).Length;
+            string report = $"video size={size} expected={expected:0} ({FileSizeText.Text}) kbps={kbps} out={w}x{h}";
+            if (Math.Abs(size - expected) > expected * 0.2) App.Fail("Two-pass size missed the target: " + report);
+            App.Pass(report);
         }
         catch (Exception ex) { App.Fail("Video editor self-test failed: " + ex); }
     }
@@ -688,6 +745,7 @@ public partial class VideoEditorWindow : Window
     {
         _busy = busy;
         TextCard.IsEnabled = CropCard.IsEnabled = ExportButton.IsEnabled = FmtMp4.IsEnabled = FmtMkv.IsEnabled = !busy;
+        FileSizeSlider.IsEnabled = !busy && FileSizeSlider.Minimum < 100 && _info != null;
         CancelButton.IsEnabled = busy;
     }
 

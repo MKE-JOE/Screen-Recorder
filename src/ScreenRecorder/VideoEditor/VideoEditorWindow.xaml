@@ -160,6 +160,18 @@
                             <RadioButton x:Name="FmtMp4" Content="MP4" Margin="0,0,14,0" IsChecked="True"/>
                             <RadioButton x:Name="FmtMkv" Content="MKV"/>
                         </StackPanel>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource Label}" Text="File size"/>
+                            <Slider x:Name="FileSizeSlider" Grid.Column="1" Minimum="25" Maximum="100" Value="100" VerticalAlignment="Center"
+                                    SmallChange="1" LargeChange="5" IsSnapToTickEnabled="True" TickFrequency="1" IsEnabled="False"
+                                    ValueChanged="OnFileSizeChanged"/>
+                        </Grid>
+                        <TextBlock x:Name="FileSizeText" Margin="0,4,0,0" FontWeight="SemiBold" Text="Measuring…"/>
+                        <TextBlock x:Name="FileSizeHint" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap" Foreground="{StaticResource TextMuted}"/>
                         <Button x:Name="ExportButton" Style="{StaticResource PrimaryButton}" Content="Save video…" Margin="0,10,0,0" Padding="10,7"
                                 Click="OnExport"/>
                         <Grid Margin="0,8,0,0">

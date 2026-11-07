@@ -17,7 +17,6 @@ public partial class MainWindow : Window
     private enum Mode { Idle, Countdown, Recording, Paused, Finishing, Exporting }
 
     private sealed record SizePreset(string Name, int W, int H) { public override string ToString() => Name; }
-    private sealed record ColorChoice(string Name, string Hex, string OutlineHex) { public override string ToString() => Name; }
     private const string AreaItem = "Selected area (drag the frame)";
 
     private static readonly SizePreset[] SizePresets =
@@ -30,32 +29,20 @@ public partial class MainWindow : Window
         new("800 × 600", 800, 600),
     };
 
-    private static readonly ColorChoice[] Colors =
-    {
-        new("White", "FFFFFF", "000000"),
-        new("Yellow", "FFE14D", "000000"),
-        new("Black", "000000", "FFFFFF"),
-        new("Red", "FF3B30", "000000"),
-        new("Cyan", "3FE0FF", "000000"),
-        new("Lime", "7CFF4F", "000000"),
-    };
-
     private readonly RegionWindow _region = new();
     private readonly ControlBar _bar = new();
     private const int HotkeyRecord = 1, HotkeyPause = 2, HotkeyStop = 3, HotkeyFrame = 4;
     private bool _frameHidden;
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(100) };
-    private readonly TextOverlay _overlay = new();
     private Mode _mode = Mode.Idle;
     private Recorder? _recorder;
     private CancellationTokenSource? _countdownCts, _exportCts;
-    private bool _ffmpegReady, _syncingUi, _syncingTimeline, _isPlaying, _closeAfterSave, _sizeTouched;
+    private bool _ffmpegReady, _syncingUi, _syncingTimeline, _isPlaying, _closeAfterSave;
     private string? _videoPath, _lastExport;
-    private double _duration, _trimStart, _trimEnd;
+    private double _duration;
+    private VideoInfo? _info;
     private int _videoW, _videoH;
-    private Point? _dragStart;
-    private double _dragOrigX, _dragOrigY;
 
     private static string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Screen Recorder");
 
@@ -67,10 +54,6 @@ public partial class MainWindow : Window
 
         SizeCombo.ItemsSource = SizePresets;
         SizeCombo.SelectedIndex = 2;
-        FontCombo.ItemsSource = FontChoice.All;
-        FontCombo.SelectedItem = _overlay.Font;
-        ColorCombo.ItemsSource = Colors;
-        ColorCombo.SelectedIndex = 0;
 
         Loaded += OnLoaded;
         SourceInitialized += (_, _) =>
@@ -357,7 +340,7 @@ public partial class MainWindow : Window
             default:
                 if (_videoPath == null) return;
                 PausePlayback();
-                Seek(_trimStart);
+                Seek(0);
                 break;
         }
     }
@@ -366,7 +349,7 @@ public partial class MainWindow : Window
     {
         if (_videoPath == null || _mode != Mode.Idle) return;
         double pos = Media.Position.TotalSeconds;
-        if (pos < _trimStart || pos >= _trimEnd - 0.05) Seek(_trimStart);
+        if (pos >= _duration - 0.05) Seek(0);
         Media.Play();
         _isPlaying = true;
     }
@@ -395,6 +378,9 @@ public partial class MainWindow : Window
     {
         _videoPath = path;
         _isPlaying = false;
+        _info = null;
+        UpdateFileSize();
+        _ = ProbeAsync(path);
         Media.Volume = 0;
         Media.Source = new Uri(path);
         Media.Play();      // opens the file; paused again in MediaOpened so the first frame shows
@@ -414,26 +400,15 @@ public partial class MainWindow : Window
         Placeholder.Visibility = Visibility.Collapsed;
 
         Timeline.Maximum = Math.Max(0.1, _duration);
-        _trimStart = 0;
-        _trimEnd = _duration;
-        if (!_sizeTouched)
-        {
-            _syncingUi = true;
-            SizeSlider.Maximum = Math.Max(240, _videoH / 2.0);
-            SizeSlider.Value = Math.Clamp(Math.Round(_videoH / 10.0), 24, 160);
-            _syncingUi = false;
-        }
-        _overlay.Y = Math.Round(_videoH * 0.05);
-        SyncTrimUi();
         SyncTimeline(0);
-        RefreshOverlay();
+        UpdateFileSize();
         UpdateUi();
     }
 
     private void OnMediaEnded(object sender, RoutedEventArgs e)
     {
         PausePlayback();
-        Seek(_trimEnd);
+        Seek(_duration);
     }
 
     private void OnMediaFailed(object sender, ExceptionRoutedEventArgs e)
@@ -475,132 +450,13 @@ public partial class MainWindow : Window
         if (_videoPath != null && _isPlaying)
         {
             double pos = Media.Position.TotalSeconds;
-            if (pos >= _trimEnd)
+            if (pos >= _duration)
             {
                 PausePlayback();
-                Seek(_trimEnd);
+                Seek(_duration);
             }
             else SyncTimeline(pos);
         }
-    }
-
-    // ------------------------------------------------------------------ trim
-
-    private void OnSetTrimStart(object sender, RoutedEventArgs e)
-    {
-        _trimStart = Math.Min(Media.Position.TotalSeconds, _trimEnd - 0.1);
-        _trimStart = Math.Max(0, _trimStart);
-        SyncTrimUi();
-    }
-
-    private void OnSetTrimEnd(object sender, RoutedEventArgs e)
-    {
-        _trimEnd = Math.Max(Media.Position.TotalSeconds, _trimStart + 0.1);
-        _trimEnd = Math.Min(_duration, _trimEnd);
-        SyncTrimUi();
-    }
-
-    private void OnResetTrim(object sender, RoutedEventArgs e)
-    {
-        _trimStart = 0;
-        _trimEnd = _duration;
-        SyncTrimUi();
-    }
-
-    private void SyncTrimUi()
-    {
-        Timeline.SelectionStart = _trimStart;
-        Timeline.SelectionEnd = _trimEnd;
-        TrimStartText.Text = Fmt(_trimStart);
-        TrimEndText.Text = Fmt(_trimEnd);
-        TrimLengthText.Text = Fmt(_trimEnd - _trimStart);
-    }
-
-    // ------------------------------------------------------------------ text overlay
-
-    private void OnOverlayChanged(object sender, RoutedEventArgs e)
-    {
-        if (!IsLoaded) return;
-        if (sender == SizeSlider && !_syncingUi) _sizeTouched = true;
-        RefreshOverlay();
-    }
-
-    private void RefreshOverlay()
-    {
-        if (!IsLoaded) return;
-        _overlay.Text = OverlayInput.Text;
-        _overlay.Font = (FontChoice?)FontCombo.SelectedItem ?? FontChoice.All[0];
-        _overlay.FontSize = Math.Round(SizeSlider.Value);
-        var color = (ColorChoice?)ColorCombo.SelectedItem ?? Colors[0];
-        _overlay.ColorHex = color.Hex;
-        _overlay.OutlineHex = color.OutlineHex;
-        _overlay.Outline = OutlineCheck.IsChecked == true;
-        _overlay.CenterX = CenterCheck.IsChecked == true;
-        SizeValue.Text = _overlay.FontSize.ToString(CultureInfo.InvariantCulture);
-
-        OverlayText.Text = _overlay.Text.Replace("\r\n", "\n").TrimEnd('\n');
-        OverlayText.FontFamily = new FontFamily(_overlay.Font.WpfFamily);
-        OverlayText.FontWeight = _overlay.Font.Bold ? FontWeights.Bold : FontWeights.Normal;
-        OverlayText.FontSize = _overlay.FontSize;
-        OverlayText.Fill = new SolidColorBrush(ParseHex(_overlay.ColorHex));
-        OverlayText.Stroke = new SolidColorBrush(ParseHex(_overlay.OutlineHex));
-        OverlayText.StrokeThickness = _overlay.Outline ? _overlay.OutlineWidth : 0;
-        OverlayText.Visibility = _overlay.IsEmpty || _videoPath == null ? Visibility.Collapsed : Visibility.Visible;
-        PositionOverlay();
-    }
-
-    private void PositionOverlay()
-    {
-        OverlayText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        double w = OverlayText.DesiredSize.Width, h = OverlayText.DesiredSize.Height;
-        _overlay.Y = Math.Clamp(_overlay.Y, 0, Math.Max(0, _videoH - h));
-        if (_overlay.CenterX) _overlay.X = Math.Max(0, (_videoW - w) / 2);
-        _overlay.X = Math.Clamp(_overlay.X, 0, Math.Max(0, _videoW - w));
-        Canvas.SetLeft(OverlayText, _overlay.X);
-        Canvas.SetTop(OverlayText, _overlay.Y);
-    }
-
-    private void OnOverlayPlace(object sender, RoutedEventArgs e)
-    {
-        OverlayText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        double h = OverlayText.DesiredSize.Height, margin = Math.Round(_videoH * 0.05);
-        _overlay.Y = (string)((Button)sender).Tag switch
-        {
-            "top" => margin,
-            "middle" => Math.Round((_videoH - h) / 2),
-            _ => Math.Round(_videoH - h - margin),
-        };
-        PositionOverlay();
-    }
-
-    private void OnOverlayMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        _dragStart = e.GetPosition(OverlayCanvas);
-        _dragOrigX = _overlay.X;
-        _dragOrigY = _overlay.Y;
-        OverlayText.CaptureMouse();
-        e.Handled = true;
-    }
-
-    private void OnOverlayMouseMove(object sender, MouseEventArgs e)
-    {
-        if (_dragStart is not Point start) return;
-        var p = e.GetPosition(OverlayCanvas);
-        double dx = p.X - start.X, dy = p.Y - start.Y;
-        if (Math.Abs(dx) > 3 && CenterCheck.IsChecked == true)
-        {
-            CenterCheck.IsChecked = false;   // free horizontal placement
-            _overlay.CenterX = false;
-        }
-        if (!_overlay.CenterX) _overlay.X = Math.Round(_dragOrigX + dx);
-        _overlay.Y = Math.Round(_dragOrigY + dy);
-        PositionOverlay();
-    }
-
-    private void OnOverlayMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        _dragStart = null;
-        OverlayText.ReleaseMouseCapture();
     }
 
     // ------------------------------------------------------------------ export
@@ -609,24 +465,88 @@ public partial class MainWindow : Window
 
     private void OnFormatChanged(object sender, RoutedEventArgs e)
     {
-        if (GifOptions != null) GifOptions.Visibility = FmtGif.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        if (GifOptions == null) return;
+        bool gif = FmtGif.IsChecked == true;
+        GifOptions.Visibility = GifHint.Visibility = gif ? Visibility.Visible : Visibility.Collapsed;
+        SizeOptions.Visibility = FileSizeHint.Visibility = gif ? Visibility.Collapsed : Visibility.Visible;
     }
+
+    private double ClipLength => _duration > 0 ? _duration : _info?.Duration ?? 0;
+
+    private async Task ProbeAsync(string path)
+    {
+        var info = await SizeTarget.ProbeAsync(path);
+        if (_videoPath != path) return;
+        _info = info;
+        UpdateFileSize();
+    }
+
+    /// <summary>Sets the File size slider's range for the loaded clip and shows the projected size.</summary>
+    private void UpdateFileSize()
+    {
+        if (FileSizeSlider == null) return;
+        if (_info == null || ClipLength <= 0)
+        {
+            FileSizeSlider.IsEnabled = false;
+            FileSizeText.Text = _videoPath == null ? "Original size" : "Measuring…";
+            return;
+        }
+        double floor = SizeTarget.FloorPercent(_info, ClipLength, _info.Width, _info.Height);
+        _syncingUi = true;
+        FileSizeSlider.Minimum = floor;
+        FileSizeSlider.Value = Math.Max(floor, FileSizeSlider.Value);
+        _syncingUi = false;
+        FileSizeSlider.IsEnabled = floor < 100;
+        FileSizeHint.Text = floor >= 100
+            ? "This recording is already as small as it can be without losing quality."
+            : $"Slide left for a smaller file, down to {floor:0}% of the original. Lower than that and quality would suffer.";
+        OnFileSizeChanged(this, null!);
+    }
+
+    private void OnFileSizeChanged(object sender, RoutedPropertyChangedEventArgs<double>? e)
+    {
+        if (_syncingUi || FileSizeText == null || _info == null) return;
+        double pct = Math.Round(FileSizeSlider.Value);
+        double bytes = SizeTarget.SourceBytes(_info, ClipLength) * pct / 100;
+        FileSizeText.Text = pct >= 100
+            ? $"{SizeTarget.FormatBytes(bytes)} (original)"
+            : $"about {SizeTarget.FormatBytes(bytes)} ({pct:0}%)";
+    }
+
+    /// <summary>Video bitrate for the slider's setting, or null at 100% (keep the original).</summary>
+    private int? TargetKbps()
+    {
+        if (_info == null || FileSizeSlider.Value >= 99.5) return null;
+        double bytes = SizeTarget.SourceBytes(_info, ClipLength) * Math.Round(FileSizeSlider.Value) / 100;
+        return SizeTarget.VideoKbps(bytes, ClipLength, _info.HasAudio);
+    }
+
+    /// <summary>GIFs are capped at 15 seconds: longer clips use 15 seconds from the playhead.</summary>
+    private (double Start, double Length) GifRange()
+    {
+        double max = GifEditor.GifRenderer.MaxSeconds, len = ClipLength;
+        if (len <= max + 0.05) return (0, len);
+        double start = Math.Clamp(Media.Position.TotalSeconds, 0, len - max);
+        return (start, max);
+    }
+
+    private bool ConfirmGifRange(string title, double start, double length) =>
+        ClipLength <= GifEditor.GifRenderer.MaxSeconds + 0.05 ||
+        MessageBox.Show(this, $"GIFs are limited to 15 seconds and this clip is {Fmt(ClipLength)}.\n\n" +
+            $"{Fmt(start)} to {Fmt(start + length)} will be used. To use a different part, move the playhead there first.",
+            title, MessageBoxButton.OKCancel, MessageBoxImage.Information) == MessageBoxResult.OK;
 
     private async void OnExport(object sender, RoutedEventArgs e)
     {
         if (_videoPath == null || _mode != Mode.Idle) return;
         var fmt = SelectedFormat;
         string ext = fmt switch { ExportFormat.Gif => "gif", ExportFormat.Mkv => "mkv", _ => "mp4" };
-        double length = _trimEnd - _trimStart;
-
-        double end = _trimEnd;
-        if (fmt == ExportFormat.Gif && length > GifEditor.GifRenderer.MaxSeconds + 0.05)
+        double start = 0, end = ClipLength;
+        if (fmt == ExportFormat.Gif)
         {
-            if (MessageBox.Show(this, $"GIFs are limited to 15 seconds and your selection is {Fmt(length)}.\n\n" +
-                    $"The first 15 seconds ({Fmt(_trimStart)} to {Fmt(_trimStart + GifEditor.GifRenderer.MaxSeconds)}) will be exported.",
-                    "Export GIF", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
-                return;
-            end = _trimStart + GifEditor.GifRenderer.MaxSeconds;
+            var (gs, gl) = GifRange();
+            if (!ConfirmGifRange("Export GIF", gs, gl)) return;
+            start = gs; end = gs + gl;
         }
 
         var dlg = new SaveFileDialog
@@ -635,7 +555,7 @@ public partial class MainWindow : Window
             Filter = $"{ext.ToUpperInvariant()} file|*.{ext}",
             DefaultExt = ext,
             InitialDirectory = Path.GetDirectoryName(_videoPath),
-            FileName = Path.GetFileNameWithoutExtension(_videoPath) + " (edited)." + ext,
+            FileName = Path.GetFileNameWithoutExtension(_videoPath) + " (export)." + ext,
         };
         if (dlg.ShowDialog(this) != true) return;
         if (string.Equals(Path.GetFullPath(dlg.FileName), Path.GetFullPath(_videoPath), StringComparison.OrdinalIgnoreCase))
@@ -644,20 +564,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        RefreshOverlay();
-        bool useText = !_overlay.IsEmpty && (fmt == ExportFormat.Gif || TextOnVideoCheck.IsChecked == true);
         var opt = new ExportOptions
         {
             Input = _videoPath,
             Output = dlg.FileName,
             Format = fmt,
-            Start = _trimStart,
+            Start = start,
             End = end,
-            SourceDuration = _duration,
-            Overlay = useText ? _overlay : null,
+            SourceDuration = ClipLength,
             GifFps = int.Parse((string)((ComboBoxItem)GifFpsCombo.SelectedItem).Tag),
             GifWidth = int.Parse((string)((ComboBoxItem)GifWidthCombo.SelectedItem).Tag),
-            SourceWidth = _videoW,
+            SourceWidth = _info?.Width ?? _videoW,
+            VideoKbps = fmt == ExportFormat.Gif ? null : TargetKbps(),
         };
 
         PausePlayback();
@@ -670,7 +588,7 @@ public partial class MainWindow : Window
         {
             await Exporter.ExportAsync(opt, new Progress<double>(v => ExportProgress.Value = v), _exportCts.Token);
             _lastExport = dlg.FileName;
-            SetStatus("Exported " + Path.GetFileName(dlg.FileName));
+            SetStatus($"Exported {Path.GetFileName(dlg.FileName)} ({SizeTarget.FormatBytes(new FileInfo(dlg.FileName).Length)})");
         }
         catch (OperationCanceledException)
         {
@@ -696,41 +614,34 @@ public partial class MainWindow : Window
     private void OnOpenEditor(object sender, RoutedEventArgs e)
     {
         if (_videoPath == null || _mode != Mode.Idle) return;
-        double length = _trimEnd - _trimStart;
-        if (SelectedFormat == ExportFormat.Gif) { OpenGifEditor(length); return; }
+        if (SelectedFormat == ExportFormat.Gif) { OpenGifEditor(); return; }
 
         PausePlayback();
-        RefreshOverlay();
         new VideoEditor.VideoEditorWindow(new VideoEditor.VideoEditorOptions
         {
             Input = _videoPath,
-            Start = _trimStart,
-            End = _trimEnd,
+            Start = 0,
+            End = ClipLength,
             Format = SelectedFormat,
-            InitialText = _overlay.IsEmpty ? null : _overlay,
+            SizePercent = FileSizeSlider.Value,
         })
         { Owner = this }.Show();
     }
 
-    private void OpenGifEditor(double length)
+    private void OpenGifEditor()
     {
-        if (length > GifEditor.GifRenderer.MaxSeconds + 0.05 &&
-            MessageBox.Show(this, $"GIFs are limited to 15 seconds and your selection is {Fmt(length)}.\n\n" +
-                $"The editor will load {Fmt(_trimStart)} to {Fmt(_trimStart + GifEditor.GifRenderer.MaxSeconds)}. " +
-                "To use a different part, set the trim start first.", "GIF Editor", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK)
-            return;
+        var (start, length) = GifRange();
+        if (!ConfirmGifRange("GIF Editor", start, length)) return;
 
         PausePlayback();
-        RefreshOverlay();
         var editor = new GifEditor.GifEditorWindow(new GifEditor.GifEditorOptions
         {
             Input = _videoPath!,
-            Start = _trimStart,
-            Length = Math.Min(length, GifEditor.GifRenderer.MaxSeconds),
+            Start = start,
+            Length = length,
             Fps = int.Parse((string)((ComboBoxItem)GifFpsCombo.SelectedItem).Tag),
             Width = int.Parse((string)((ComboBoxItem)GifWidthCombo.SelectedItem).Tag),
-            SourceWidth = _videoW,
-            InitialText = _overlay.IsEmpty ? null : _overlay,
+            SourceWidth = _info?.Width ?? _videoW,
             SuggestedName = Path.GetFileNameWithoutExtension(_videoPath) + ".gif",
         })
         { Owner = this };
@@ -933,6 +844,4 @@ public partial class MainWindow : Window
             : $"{t.Minutes}:{t.Seconds:00}.{t.Milliseconds / 100}";
     }
 
-    private static Color ParseHex(string hex) =>
-        Color.FromRgb(Convert.ToByte(hex[..2], 16), Convert.ToByte(hex[2..4], 16), Convert.ToByte(hex[4..6], 16));
 }
