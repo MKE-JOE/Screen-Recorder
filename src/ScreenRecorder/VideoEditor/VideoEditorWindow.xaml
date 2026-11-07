@@ -147,6 +147,8 @@
                 <Border x:Name="BlurCard" Style="{StaticResource Card}" Margin="0,10,0,0">
                     <StackPanel>
                         <DockPanel Margin="0,0,0,8">
+                            <Button x:Name="DoneBlurButton" DockPanel.Dock="Right" Content="Done" Click="OnBlurDone" Margin="4,0,0,0" IsEnabled="False"
+                                    ToolTip="Hide the box outlines to review the blur as it will look in the saved video"/>
                             <Button DockPanel.Dock="Right" Content="Remove" Click="OnRemoveBlur" Margin="4,0,0,0"/>
                             <Button x:Name="AddBlurButton" DockPanel.Dock="Right" Content="+ Add blur" Click="OnAddBlur"/>
                             <TextBlock Style="{StaticResource CardTitle}" Margin="0" VerticalAlignment="Center" Text="Blur"/>
@@ -174,7 +176,7 @@
                             <Button Content="Blur for the whole clip" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OnBlurAll"/>
                         </StackPanel>
                         <TextBlock x:Name="BlurHint" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
-                                   Text="Hide part of the video. Drag a box on the preview to move it, the corner to resize. Up to 10 boxes."/>
+                                   Text="Hide part of the video. Drag a box on the preview to move it, the corner to resize. Click Done to hide the outlines. Up to 10 boxes."/>
                     </StackPanel>
                 </Border>
 
