@@ -22,7 +22,12 @@ public static class AudioDevices
     public static async Task<List<AudioSourceItem>> GetSourcesAsync()
     {
         var playback = (await GetPlaybackDevicesAsync()).Where(d => d.Id != null).ToList();
-        var mics = (await GetMicrophonesAsync()).Where(d => d.Id != null).ToList();
+        // "Stereo Mix" and similar inputs are a copy of the system sound, not a microphone: listing them would
+        // just record the same sound twice, so leave them out.
+        string[] loopbackInputs = { "stereo mix", "what u hear", "wave out mix", "wave out", "loopback" };
+        var mics = (await GetMicrophonesAsync())
+            .Where(d => d.Id != null && !loopbackInputs.Any(n => d.Name.Contains(n, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         var items = new List<AudioSourceItem>();
         foreach (var p in playback) items.Add(new($"System sound: {p.Name}", p.Id, null));
         foreach (var m in mics) items.Add(new($"Microphone: {m.Name}", null, m.Id));
