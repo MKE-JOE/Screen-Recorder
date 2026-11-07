@@ -568,8 +568,10 @@ public partial class VideoEditorWindow : Window
         Canvas.SetTop(v.Frame, a.Y);
         v.Frame.Width = a.Width;
         v.Frame.Height = a.Height;
-        v.Frame.BorderThickness = new Thickness(selected ? 3 : 1);
-        v.Frame.BorderBrush = selected ? Brushes.White : new SolidColorBrush(Color.FromArgb(0xB0, 255, 255, 255));
+        // Only the box being edited gets an outline. The others show just their blur, as they will export,
+        // but can still be clicked on the preview to pick them up again.
+        v.Frame.BorderThickness = new Thickness(3);
+        v.Frame.BorderBrush = selected ? Brushes.White : Brushes.Transparent;
         UpdateBlurVisibility(b, Position);
     }
 
