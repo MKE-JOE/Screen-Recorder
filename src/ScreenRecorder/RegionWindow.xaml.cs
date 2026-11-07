@@ -68,7 +68,7 @@ public partial class RegionWindow : Window
     }
 
     public void SetHotkeyHints(string record, string pause, string stop, string frame) =>
-        HotkeysText.Text = $"Record {record}  ·  Pause {pause}  ·  Stop {stop}  ·  Hide/show frame {frame}";
+        HotkeysText.Text = $"Record {record} · Pause {pause} · Stop {stop} · Hide/show {frame}";
 
     /// <summary>While recording the frame turns red and becomes click-through.</summary>
     public void SetRecording(bool recording)
@@ -76,10 +76,9 @@ public partial class RegionWindow : Window
         Handles.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
         ToolPill.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
         InfoPill.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
-        CaptureArea.Background = recording ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(0x18, 0x25, 0x63, 0xEB));
         var c = recording ? Color.FromRgb(0xE5, 0x48, 0x4D) : Color.FromRgb(0x25, 0x63, 0xEB);
         Outline.Stroke = new SolidColorBrush(c);
-        Band.BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, c.R, c.G, c.B));
+        Band.BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, c.R, c.G, c.B));
         IsHitTestVisible = !recording;
         WindowHelpers.SetExStyle(_hwnd, NativeMethods.WS_EX_TRANSPARENT, recording);
     }

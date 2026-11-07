@@ -30,6 +30,8 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenRe
   - Loop forever, once, or a set number of times. "Best quality" (dithered) or "Smaller file".
   - The file size is shown after saving, with a warning above common limits (Discord 10 MB, X 15 MB).
 
+- The inside of the capture frame is click-through, so apps under it (even a full-screen frame) stay usable. Move it with the **✥ Move** grip or the blue band; resize from the edges and corners.
+
 The capture frame, countdown, floating bar and app window are hidden from the recording on Windows 10 version 2004 and later.
 
 ## Download

@@ -31,29 +31,28 @@
     </Window.Resources>
 
     <Grid>
-        <!-- Band around the capture area (outside what gets recorded). -->
-        <Border x:Name="Band" BorderThickness="10" BorderBrush="#332563EB" MouseLeftButtonDown="OnDragMove">
-            <Border x:Name="CaptureArea" Background="#182563EB" MouseLeftButtonDown="OnDragMove">
-                <Grid>
-                <Border x:Name="ToolPill" Background="#CC111827" CornerRadius="8" Padding="4"
+        <!-- Band around the capture area (outside what gets recorded): drag it to move, edges/corners resize. -->
+        <Border x:Name="Band" BorderThickness="10" BorderBrush="#552563EB" MouseLeftButtonDown="OnDragMove">
+            <!-- No background: the inside is click-through, so apps under the frame stay usable. -->
+            <Border x:Name="CaptureArea">
+                <Border x:Name="ToolPill" Background="#E6111827" CornerRadius="8" Padding="4"
                         HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8">
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="Hide frame" Padding="8,3" FontSize="12" Click="OnHide"
-                                ToolTip="Hide this frame. The same area is still recorded. Show it again from the floating bar or with the hotkey."/>
-                    </StackPanel>
-                </Border>
-                <Border x:Name="InfoPill" Background="#CC111827" CornerRadius="8" Padding="14,8"
-                        HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
                     <StackPanel>
-                        <TextBlock x:Name="SizeText" Foreground="White" FontSize="20" FontWeight="SemiBold"
-                                   HorizontalAlignment="Center" Text="1280 × 720"/>
-                        <TextBlock Foreground="#D1D5DB" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0"
-                                   Text="Drag to move · drag the edges or corners to resize"/>
-                        <TextBlock x:Name="HotkeysText" Foreground="#D1D5DB" FontSize="12" HorizontalAlignment="Center" Margin="0,6,0,0"
-                                   TextAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="#33FFFFFF" CornerRadius="5" Padding="8,3" Cursor="SizeAll"
+                                    MouseLeftButtonDown="OnDragMove" ToolTip="Drag to move the frame">
+                                <TextBlock Foreground="White" FontSize="12" Text="✥ Move"/>
+                            </Border>
+                            <TextBlock x:Name="SizeText" Foreground="White" FontSize="13" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Margin="10,0" Text="1280 × 720"/>
+                            <Button Content="Hide frame" Padding="8,3" FontSize="12" Click="OnHide"
+                                    ToolTip="Hide this frame. The same area is still recorded. Show it again from the floating bar or with the hotkey."/>
+                        </StackPanel>
+                        <Border x:Name="InfoPill" Margin="4,5,4,1" IsHitTestVisible="False">
+                            <TextBlock x:Name="HotkeysText" Foreground="#D1D5DB" FontSize="11" TextWrapping="Wrap" MaxWidth="420"/>
+                        </Border>
                     </StackPanel>
                 </Border>
-                </Grid>
             </Border>
         </Border>
         <Rectangle x:Name="Outline" Margin="7" Stroke="#2563EB" StrokeThickness="3" StrokeDashArray="3 2" IsHitTestVisible="False"/>
