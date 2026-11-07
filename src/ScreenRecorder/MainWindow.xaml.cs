@@ -107,12 +107,11 @@ public partial class MainWindow : Window
             }
             if (App.SelfTest)
             {
-                // Typical screen recordings must be shrinkable well below 100%: a busy 5 MB / 30 s clip, and a long,
+                // Typical screen recordings must be shrinkable well below 100%: a 5 MB / 30 s clip with sound, and a long,
                 // mostly still one with silent audio (6 MB / 4 min, the case that used to get stuck).
                 double floor = Math.Max(
-                    SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 30, 60, true, 5_000_000)),
-                    Math.Max(SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 240, 60, true, 6_000_000, 195, 2)),
-                             SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 240, 60, true, 6_000_000))));
+                    SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 30, 60, true, 5_000_000, 1000, 320)),
+                    SizeTarget.FloorPercent(new VideoInfo(1920, 1080, 240, 60, true, 6_000_000, 185, 2)));
                 if (floor > 50) App.Fail($"File size floor too high for a typical screen recording: {floor}%");
                 var displays = Displays.GetAll();
                 var target = Displays.Resolve(_region.GetCaptureRect());

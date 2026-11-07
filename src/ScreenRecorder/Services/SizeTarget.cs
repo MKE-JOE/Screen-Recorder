@@ -48,12 +48,26 @@ public static class SizeTarget
                     + double.Parse(d.Groups[3].Value, CultureInfo.InvariantCulture);
             var f = Regex.Match(info, @"Video:.*?, (\d+(?:\.\d+)?) fps");
             double fps = f.Success ? double.Parse(f.Groups[1].Value, CultureInfo.InvariantCulture) : 30;
+            bool hasAudio = info.Contains("Audio:", StringComparison.Ordinal);
             var vk = Regex.Match(info, @"Video:[^\n]*?(\d+) kb/s");
             var ak = Regex.Match(info, @"Audio:[^\n]*?(\d+) kb/s");
+            double? videoKbps = vk.Success ? double.Parse(vk.Groups[1].Value, CultureInfo.InvariantCulture) : null;
+            double? audioKbps = ak.Success ? double.Parse(ak.Groups[1].Value, CultureInfo.InvariantCulture) : hasAudio ? null : 0;
+            if ((videoKbps == null || audioKbps == null) && dur > 0)
+            {
+                // MKV doesn't list stream bitrates: read through the file (stream copy, very fast) and total them up.
+                using var q = Ffmpeg.Start(new[] { "-hide_banner", "-nostats", "-i", path, "-map", "0", "-c", "copy", "-f", "null", "-" });
+                string stats = await q.StandardError.ReadToEndAsync();
+                await q.WaitForExitAsync();
+                var sz = Regex.Match(stats, @"video:(\d+)\s*[kK]i?B\s+audio:(\d+)\s*[kK]i?B");
+                if (sz.Success)
+                {
+                    videoKbps = double.Parse(sz.Groups[1].Value, CultureInfo.InvariantCulture) * 1024 * 8 / 1000 / dur;
+                    audioKbps = double.Parse(sz.Groups[2].Value, CultureInfo.InvariantCulture) * 1024 * 8 / 1000 / dur;
+                }
+            }
             return new VideoInfo(int.Parse(v.Groups[1].Value), int.Parse(v.Groups[2].Value), dur, fps,
-                info.Contains("Audio:", StringComparison.Ordinal), new FileInfo(path).Length,
-                vk.Success ? double.Parse(vk.Groups[1].Value, CultureInfo.InvariantCulture) : null,
-                ak.Success ? double.Parse(ak.Groups[1].Value, CultureInfo.InvariantCulture) : null);
+                hasAudio, new FileInfo(path).Length, videoKbps, audioKbps);
         }
         catch { return null; }
     }
