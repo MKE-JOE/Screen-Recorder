@@ -40,7 +40,7 @@ jobs:
             if ($filters -notmatch "\s$n\s") { throw "FFmpeg is missing filter $n" }
           }
           $enc = (& $ff -hide_banner -encoders) -join "`n"
-          foreach ($n in 'libx264','aac','gif') { if ($enc -notmatch "\s$n\s") { throw "FFmpeg is missing encoder $n" } }
+          foreach ($n in 'libx264','aac','gif','h264_nvenc','h264_qsv','h264_amf') { if ($enc -notmatch "\s$n\s") { throw "FFmpeg is missing encoder $n" } }
           $dev = (& $ff -hide_banner -devices) -join "`n"
           if ($dev -notmatch 'gdigrab') { throw "FFmpeg is missing gdigrab" }
 

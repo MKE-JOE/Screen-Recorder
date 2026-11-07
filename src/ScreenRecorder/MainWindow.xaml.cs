@@ -104,7 +104,8 @@ public partial class MainWindow : Window
         {
             await Ffmpeg.EnsureAsync();
             _ffmpegReady = true;
-            SetStatus("Ready");
+            var encoder = await VideoEncoder.BestAsync();   // tested once; a graphics-card encoder avoids stutter
+            SetStatus($"Ready · recording with {encoder}");
             if (App.SelfTestGif is (string gifIn, string gifOut))
             {
                 new GifEditor.GifEditorWindow(new GifEditor.GifEditorOptions { Input = gifIn, Start = 0.5, Length = 3, Fps = 15, Width = 320, SourceWidth = 640 })
@@ -127,7 +128,7 @@ public partial class MainWindow : Window
                 if (floor > 65) App.Fail($"File size floor too high for a typical screen recording: {floor}%");
                 var displays = Displays.GetAll();
                 var target = Displays.Resolve(_region.GetCaptureRect());
-                App.Pass($"sizeFloor={floor}%\nffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +
+                App.Pass($"encoder={encoder}\nsizeFloor={floor}%\nffmpeg={Ffmpeg.ExePath}\ndisplays={displays.Count}\ntarget={target.Rect} dda={target.DdaOutputIndex}\n" +
                          $"audioSources={AudioCombo.Items.Count}");
             }
         }
@@ -242,6 +243,7 @@ public partial class MainWindow : Window
             Fps = int.Parse((string)((ComboBoxItem)FpsCombo.SelectedItem).Tag),
             SystemAudioDeviceId = (AudioCombo.SelectedItem as AudioSourceItem)?.SystemId,
             MicrophoneDeviceId = (AudioCombo.SelectedItem as AudioSourceItem)?.MicId,
+            Encoder = await VideoEncoder.BestAsync(),
         };
         string work = Path.Combine(Ffmpeg.AppDataDir, "parts", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
         _recorder = new Recorder(options, work);

@@ -10,6 +10,8 @@ public sealed class RecordingOptions
     public int Fps { get; init; } = 30;
     public string? SystemAudioDeviceId { get; init; }
     public string? MicrophoneDeviceId { get; init; }
+    /// <summary>H.264 encoder for the live recording (graphics card when available).</summary>
+    public VideoEncoder Encoder { get; init; } = VideoEncoder.Software;
 }
 
 /// <summary>
@@ -197,7 +199,7 @@ public sealed class Recorder : IAsyncDisposable
         foreach (var p in _pipes) a.AddRange(p.InputArgs(origin));
 
         var fc = new StringBuilder();
-        const string toYuv = "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p";
+        string toYuv = $"scale=out_color_matrix=bt709:out_range=tv,format={_opt.Encoder.PixelFormat}";
         if (_useGdi)
         {
             fc.Append($"[0:v]{toYuv}[v]");
@@ -226,8 +228,11 @@ public sealed class Recorder : IAsyncDisposable
         a.AddRange(new[]
         {
             "-fps_mode", "cfr", "-r", fps.ToString(),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-g", (fps * 2).ToString(),
-            "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+        });
+        a.AddRange(_opt.Encoder.Args(fps));
+        a.AddRange(new[]
+        {
+            "-pix_fmt", _opt.Encoder.PixelFormat, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
         });
         if (_pipes.Count > 0) a.AddRange(new[] { "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-ac", "2" });
         a.Add(output);
