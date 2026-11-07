@@ -47,8 +47,10 @@ public partial class MainWindow : Window
 
     /// <summary>Where recordings wait when autosave is off. Cleared of old leftovers at startup.</summary>
     private static string UnsavedDir => Path.Combine(Ffmpeg.AppDataDir, "Unsaved");
-    /// <summary>The loaded clip if it only exists in <see cref="UnsavedDir"/> and hasn't been exported yet.</summary>
+    /// <summary>The loaded clip when it lives in <see cref="UnsavedDir"/> (autosave off). Deleted once it's replaced or the app closes.</summary>
     private string? _unsavedPath;
+    /// <summary>True once that clip has been exported, so throwing it away needs no warning.</summary>
+    private bool _unsavedExported;
 
     private static string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Screen Recorder");
 
@@ -285,7 +287,7 @@ public partial class MainWindow : Window
             DiscardUnsaved();
             EndRecordingUi(reason ?? (autoSave ? "Saved " + Path.GetFileName(path) : "Recording ready. It isn't saved yet: export it to keep it."));
             LoadVideo(path);
-            if (!autoSave) _unsavedPath = path;
+            if (!autoSave) { _unsavedPath = path; _unsavedExported = false; }
         }
         catch (Exception ex)
         {
@@ -583,7 +585,7 @@ public partial class MainWindow : Window
             Title = "Export " + ext.ToUpperInvariant(),
             Filter = $"{ext.ToUpperInvariant()} file|*.{ext}",
             DefaultExt = ext,
-            InitialDirectory = _unsavedPath != null ? OutputDir : Path.GetDirectoryName(_videoPath),
+            InitialDirectory = _unsavedPath != null && _unsavedPath == _videoPath ? OutputDir : Path.GetDirectoryName(_videoPath),
             FileName = Path.GetFileNameWithoutExtension(_videoPath) + " (export)." + ext,
         };
         if (dlg.ShowDialog(this) != true) return;
@@ -698,7 +700,7 @@ public partial class MainWindow : Window
 
     private void OnShowFolder(object sender, RoutedEventArgs e)
     {
-        string? file = _lastExport ?? (_unsavedPath == null ? _videoPath : null);
+        string? file = _lastExport ?? (_unsavedPath == _videoPath ? null : _videoPath);
         try
         {
             if (file != null && File.Exists(file))
@@ -881,12 +883,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Called when the loaded clip has been exported (here or from an editor), so it's no longer at risk.</summary>
-    public void MarkClipKept() => _unsavedPath = null;
+    public void MarkClipKept() => _unsavedExported = true;
 
     /// <summary>Asks before an unsaved, never-exported recording would be thrown away.</summary>
     private bool ConfirmDiscardUnsaved(string action)
     {
-        if (_unsavedPath == null || !File.Exists(_unsavedPath) || App.SelfTest) return true;
+        if (_unsavedPath == null || _unsavedExported || !File.Exists(_unsavedPath) || App.SelfTest) return true;
         return MessageBox.Show(this,
             $"{action}? The current recording hasn't been saved or exported and will be discarded.\n\n" +
             "To keep it, choose No and press Export… (MP4 at 100% saves it unchanged).",

@@ -40,7 +40,7 @@ Get `ScreenRecorder.exe` from the latest release on the [Releases](../../release
 
 ## Where files go
 
-- **Recordings:** with **Autosave after Stop** ticked, each recording is saved to `Videos\Screen Recorder\Recording <date time>.mp4`. Unticked (the default), the clip opens in the app unsaved, kept in `%LOCALAPPDATA%\PortableScreenRecorder\Unsaved`; export it to keep it. The app asks before discarding an unsaved clip (new recording, opening another video, or closing).
+- **Recordings:** with **Autosave after Stop** ticked, each recording is saved to `Videos\Screen Recorder\Recording <date time>.mp4`. Unticked (the default), the clip opens in the app unsaved, kept in `%LOCALAPPDATA%\PortableScreenRecorder\Unsaved`; export it to keep it. The temp copy is deleted when you start a new recording, open another video or close the app, and the app asks first if you never exported it.
 - **Exports:** wherever you choose in the Save dialog.
 - **Encoder:** on first launch the app unpacks its built-in encoder (FFmpeg, about 85 MB) once into `%LOCALAPPDATA%\PortableScreenRecorder`. Delete that folder to remove every trace. If you put an `ffmpeg.exe` next to `ScreenRecorder.exe`, the app uses that one instead.
 
