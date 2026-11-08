@@ -51,6 +51,12 @@ internal static class NativeMethods
     public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
     [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     [DllImport("user32.dll")]
@@ -175,20 +181,28 @@ internal static class WindowHelpers
     }
 
     /// <summary>
-    /// Keeps a Topmost window on top. Windows sometimes drops a window's always-on-top flag (for example
-    /// around full-screen apps, the taskbar or display changes) while WPF still thinks it is set, and the
-    /// window then falls behind ordinary windows. This puts it back when it is shown and, while visible,
-    /// checks once a second. It never activates the window or moves it above other always-on-top windows.
+    /// Keeps a Topmost window on top. Two things can bury it: Windows sometimes drops the always-on-top flag
+    /// while WPF still thinks it is set, and other apps (the Windows Photos viewer, for one) open their own
+    /// always-on-top windows above it. This raises it again when it is shown and, while it is visible, twice a
+    /// second whenever the flag is gone or another app is in front. It never takes focus, and it leaves the
+    /// order alone while this app is in front, so the app's own dialogs stay above the frame.
     /// </summary>
     public static void KeepOnTop(System.Windows.Window window)
     {
-        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        uint ownPid = (uint)Environment.ProcessId;
         void Restore(bool force)
         {
             var hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
             if (hwnd == IntPtr.Zero || !window.IsVisible) return;
             long style = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
-            if (!force && (style & NativeMethods.WS_EX_TOPMOST) != 0) return;
+            if (!force && (style & NativeMethods.WS_EX_TOPMOST) != 0)
+            {
+                var front = NativeMethods.GetForegroundWindow();
+                if (front == IntPtr.Zero) return;
+                NativeMethods.GetWindowThreadProcessId(front, out uint frontPid);
+                if (frontPid == ownPid) return;   // our own window or dialog is in front: leave the order alone
+            }
             NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
                 NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
         }
