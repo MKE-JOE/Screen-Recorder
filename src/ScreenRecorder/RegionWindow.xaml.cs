@@ -30,6 +30,7 @@ public partial class RegionWindow : Window
             WindowHelpers.SetExStyle(_hwnd, NativeMethods.WS_EX_TOOLWINDOW, true);
             WindowHelpers.ExcludeFromCapture(_hwnd, true);
         };
+        WindowHelpers.KeepOnTop(this);
         SizeChanged += (_, _) => Changed();
         LocationChanged += (_, _) => Changed();
         DpiChanged += (_, _) => Changed();

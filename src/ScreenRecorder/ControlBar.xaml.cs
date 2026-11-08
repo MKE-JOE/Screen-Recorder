@@ -24,6 +24,7 @@ public partial class ControlBar : Window
             WindowHelpers.SetExStyle(hwnd, NativeMethods.WS_EX_TOOLWINDOW, true);
             WindowHelpers.ExcludeFromCapture(hwnd, true);
         };
+        WindowHelpers.KeepOnTop(this);
         Loaded += (_, _) =>
         {
             // Start at the top centre of the primary screen's work area.

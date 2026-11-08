@@ -18,6 +18,7 @@ internal static class NativeMethods
     public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
 
     public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_TOPMOST = 0x8;
     public const int WS_EX_TRANSPARENT = 0x20;
     public const int WS_EX_TOOLWINDOW = 0x80;
     public const int WS_EX_NOACTIVATE = 0x08000000;
@@ -25,7 +26,10 @@ internal static class NativeMethods
     public const uint MONITOR_DEFAULTTONEAREST = 2;
     public const uint MONITORINFOF_PRIMARY = 1;
 
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const uint SWP_NOACTIVATE = 0x0010;
 
     public const int WM_HOTKEY = 0x0312;
@@ -168,6 +172,33 @@ internal static class WindowHelpers
         if (hwnd == IntPtr.Zero) return;
         try { NativeMethods.SetWindowDisplayAffinity(hwnd, exclude ? NativeMethods.WDA_EXCLUDEFROMCAPTURE : NativeMethods.WDA_NONE); }
         catch { /* not supported */ }
+    }
+
+    /// <summary>
+    /// Keeps a Topmost window on top. Windows sometimes drops a window's always-on-top flag (for example
+    /// around full-screen apps, the taskbar or display changes) while WPF still thinks it is set, and the
+    /// window then falls behind ordinary windows. This puts it back when it is shown and, while visible,
+    /// checks once a second. It never activates the window or moves it above other always-on-top windows.
+    /// </summary>
+    public static void KeepOnTop(System.Windows.Window window)
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        void Restore(bool force)
+        {
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (hwnd == IntPtr.Zero || !window.IsVisible) return;
+            long style = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
+            if (!force && (style & NativeMethods.WS_EX_TOPMOST) != 0) return;
+            NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+        timer.Tick += (_, _) => Restore(force: false);
+        window.IsVisibleChanged += (_, e) =>
+        {
+            if ((bool)e.NewValue) { Restore(force: true); timer.Start(); }
+            else timer.Stop();
+        };
+        window.Closed += (_, _) => timer.Stop();
     }
 
     public static void SetExStyle(IntPtr hwnd, int flags, bool on)
