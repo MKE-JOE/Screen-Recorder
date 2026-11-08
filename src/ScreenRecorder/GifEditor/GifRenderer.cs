@@ -38,16 +38,17 @@ public static class GifRenderer
         return frames;
     }
 
-    /// <summary>Renders text and crop into the frames (on the UI thread), then encodes an optimised GIF.</summary>
-    public static async Task ExportAsync(IReadOnlyList<GifFrame> frames, IReadOnlyList<TextLayer> layers, Int32Rect? crop,
-        int frameWidth, int frameHeight, int loop, bool dither, string output, IProgress<double> progress, CancellationToken ct)
+    /// <summary>Renders blur, text and crop into the frames (on the UI thread), then encodes an optimised GIF.</summary>
+    public static async Task ExportAsync(IReadOnlyList<GifFrame> frames, IReadOnlyList<TextLayer> layers, IReadOnlyList<BlurBox> blurs,
+        Int32Rect? crop, int frameWidth, int frameHeight, int loop, bool dither, string output, IProgress<double> progress, CancellationToken ct)
     {
         string work = Path.Combine(Path.GetTempPath(), "ScreenRecorderGif_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(work);
         try
         {
             var area = crop is Int32Rect c ? new Rect(c.X, c.Y, c.Width, c.Height) : new Rect(0, 0, frameWidth, frameHeight);
-            bool needsRender = crop != null || layers.Any(l => !string.IsNullOrWhiteSpace(l.Text));
+            bool needsRender = crop != null || blurs.Count > 0 || layers.Any(l => !string.IsNullOrWhiteSpace(l.Text));
+            int radius = BlurBox.Radius(frameHeight);
             var paths = new List<string>(frames.Count);
 
             for (int i = 0; i < frames.Count; i++)
@@ -61,6 +62,14 @@ public static class GifRenderer
                 {
                     dc.PushTransform(new TranslateTransform(-area.X, -area.Y));
                     dc.DrawImage(src, new Rect(0, 0, frameWidth, frameHeight));
+                    // Blur before text, so a caption over a blurred area stays sharp.
+                    foreach (var blur in blurs)
+                    {
+                        if (!blur.IsOnFrame(i)) continue;
+                        var r = blur.PixelArea(src.PixelWidth, src.PixelHeight);
+                        double sx = (double)frameWidth / src.PixelWidth, sy = (double)frameHeight / src.PixelHeight;
+                        dc.DrawImage(BlurBox.BlurPatch(src, r, radius), new Rect(r.X * sx, r.Y * sy, r.Width * sx, r.Height * sy));
+                    }
                     foreach (var layer in layers)
                         if (layer.IsOnFrame(i)) layer.DrawOn(dc, area);
                     dc.Pop();

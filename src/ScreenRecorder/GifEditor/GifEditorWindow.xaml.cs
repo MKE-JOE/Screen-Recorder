@@ -25,7 +25,7 @@ public sealed class GifEditorOptions
     public string SuggestedName { get; init; } = "animation.gif";
 }
 
-/// <summary>Frame-by-frame GIF editor: strip of frames, timing tools, timed captions, crop, and optimised export.</summary>
+/// <summary>Frame-by-frame GIF editor: strip of frames, timing tools, timed captions, blur boxes, crop, and optimised export.</summary>
 public partial class GifEditorWindow : Window
 {
     public sealed record FrameItem(string Number, string DelayText, BitmapSource Thumb);
@@ -36,10 +36,15 @@ public partial class GifEditorWindow : Window
     private readonly DispatcherTimer _play = new();
     private readonly Dictionary<string, BitmapSource> _thumbs = new();
     private readonly Dictionary<TextLayer, OutlinedText> _visuals = new();
-    private readonly Stack<(List<GifFrame> Frames, List<TextLayer> Layers)> _undo = new(), _redo = new();
+    private readonly Stack<(List<GifFrame> Frames, List<TextLayer> Layers, List<BlurBox> Blurs)> _undo = new(), _redo = new();
+    private readonly Dictionary<BlurBox, (Image Patch, Border Frame)> _blurVisuals = new();
 
     private List<GifFrame> _frames = new();
     private List<TextLayer> _layers = new();
+    private List<BlurBox> _blurs = new();
+    private BitmapSource? _currentImage;
+    /// <summary>False after "Done": outlines and handles are hidden so the edit can be reviewed as it will export.</summary>
+    private bool _blurEditing = true;
     private int _current, _frameW = 640, _frameH = 360;
     private bool _loadingUi, _busy;
     private CropPreset _cropPreset = CropPreset.All[0];
@@ -48,11 +53,12 @@ public partial class GifEditorWindow : Window
     private string? _lastSaved;
 
     // drag state
-    private enum Drag { None, Text, Crop }
+    private enum Drag { None, Text, Crop, Blur }
     private Drag _drag;
     private Point _dragStart;
     private Point _dragOrigin;
     private TextLayer? _dragLayer;
+    private BlurBox? _dragBlur;
 
     /// <summary>Set by --selftest-gif: after loading, run the main editing tools and export here, then exit.</summary>
     public string? SelfTestOutput { get; init; }
@@ -134,17 +140,25 @@ public partial class GifEditorWindow : Window
             OnAddLayer(this, new RoutedEventArgs());
             LayerText.Text = "Self test";
             OnLayerPlace(new Button { Tag = "bottom" }, new RoutedEventArgs());
+            OnAddBlur(this, new RoutedEventArgs());
+            CurrentBlur!.ToFrame = Math.Max(0, _frames.Count / 2);
+            OnAddBlur(this, new RoutedEventArgs());   // second box, all frames
+            if (_blurs.Count != 2 || _blurVisuals.Values.Count(v => v.Patch.Source != null && v.Patch.Visibility == Visibility.Visible) != 2)
+                App.Fail("Blur boxes were not previewed");
+            OnBlurDone(this, new RoutedEventArgs());
+            if (_blurVisuals.Values.Any(v => v.Frame.Visibility == Visibility.Visible) || BlurHandle.Visibility == Visibility.Visible)
+                App.Fail("Blur outlines still showing after Done");
             CropCombo.SelectedIndex = 2;   // square
             OnBoomerang(this, new RoutedEventArgs());
             OnReduce(this, new RoutedEventArgs());
             OnUndo(this, new RoutedEventArgs());
             OnRedo(this, new RoutedEventArgs());
             var crop = new Int32Rect((int)_crop.X, (int)_crop.Y, (int)_crop.Width, (int)_crop.Height);
-            await GifRenderer.ExportAsync(_frames, _layers, crop, _frameW, _frameH, 0, true, output,
+            await GifRenderer.ExportAsync(_frames, _layers, _blurs, crop, _frameW, _frameH, 0, true, output,
                 new Progress<double>(_ => { }), CancellationToken.None);
             long size = new FileInfo(output).Length;
             if (size < 1000) throw new InvalidOperationException("GIF is empty");
-            App.Pass($"gif loaded={loaded} frames={_frames.Count} size={size} crop={crop.Width}x{crop.Height} length={_frames.Sum(f => f.DelayMs)}ms");
+            App.Pass($"gif loaded={loaded} frames={_frames.Count} blurs={_blurs.Count} size={size} crop={crop.Width}x{crop.Height} length={_frames.Sum(f => f.DelayMs)}ms");
         }
         catch (Exception ex)
         {
@@ -187,6 +201,7 @@ public partial class GifEditorWindow : Window
         LayerList.ItemsSource = null;
         LayerList.ItemsSource = _layers;
         RebuildLayerVisuals();
+        RebuildBlurVisuals();
         ShowFrame(Math.Min(_current, _frames.Count - 1));
     }
 
@@ -201,13 +216,14 @@ public partial class GifEditorWindow : Window
     {
         if (_frames.Count == 0) return;
         _current = Math.Clamp(index, 0, _frames.Count - 1);
-        PreviewImage.Source = GifRenderer.Load(_frames[_current].ImagePath);
+        PreviewImage.Source = _currentImage = GifRenderer.Load(_frames[_current].ImagePath);
         _loadingUi = true;
         FrameSlider.Value = _current;
         _loadingUi = false;
         FrameText.Text = $"Frame {_current + 1} / {_frames.Count}";
         foreach (var (layer, visual) in _visuals)
             visual.Visibility = layer.IsOnFrame(_current) && !string.IsNullOrWhiteSpace(layer.Text) ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var b in _blurs) UpdateBlurVisual(b);
     }
 
     private void OnSliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -264,10 +280,13 @@ public partial class GifEditorWindow : Window
 
     private void Snapshot()
     {
-        _undo.Push((_frames.ToList(), _layers.Select(l => l.Clone()).ToList()));
+        _undo.Push(State());
         _redo.Clear();
         if (_undo.Count > 100) TrimStack(_undo, 100);
     }
+
+    private (List<GifFrame>, List<TextLayer>, List<BlurBox>) State() =>
+        (_frames.ToList(), _layers.Select(l => l.Clone()).ToList(), _blurs.Select(b => b.Clone()).ToList());
 
     private static void TrimStack<T>(Stack<T> s, int max)
     {
@@ -279,19 +298,21 @@ public partial class GifEditorWindow : Window
     private void OnUndo(object sender, RoutedEventArgs e)
     {
         if (_busy || _undo.Count == 0) return;
-        _redo.Push((_frames.ToList(), _layers.Select(l => l.Clone()).ToList()));
-        (_frames, _layers) = _undo.Pop();
+        _redo.Push(State());
+        (_frames, _layers, _blurs) = _undo.Pop();
         RefreshAll();
         LoadLayerEditor();
+        LoadBlurEditor();
     }
 
     private void OnRedo(object sender, RoutedEventArgs e)
     {
         if (_busy || _redo.Count == 0) return;
-        _undo.Push((_frames.ToList(), _layers.Select(l => l.Clone()).ToList()));
-        (_frames, _layers) = _redo.Pop();
+        _undo.Push(State());
+        (_frames, _layers, _blurs) = _redo.Pop();
         RefreshAll();
         LoadLayerEditor();
+        LoadBlurEditor();
     }
 
     private void OnDelete(object sender, RoutedEventArgs e)
@@ -519,6 +540,7 @@ public partial class GifEditorWindow : Window
         foreach (var layer in _layers)
         {
             var v = new OutlinedText { Cursor = Cursors.SizeAll, Tag = layer };
+            Panel.SetZIndex(v, 2);   // above blur frames, so overlapping text can still be dragged
             v.MouseLeftButtonDown += OnTextMouseDown;
             StageCanvas.Children.Add(v);   // above the crop box so text stays draggable
             _visuals[layer] = v;
@@ -554,6 +576,180 @@ public partial class GifEditorWindow : Window
         _dragOrigin = new Point(Canvas.GetLeft(v), l.Y);
         v.CaptureMouse();
         e.Handled = true;
+    }
+
+    // ------------------------------------------------------------------ blur
+
+    private BlurBox? CurrentBlur => BlurList.SelectedItem as BlurBox;
+
+    private void RebuildBlurVisuals()
+    {
+        var sel = CurrentBlur;
+        for (int i = 0; i < _blurs.Count; i++) _blurs[i].Number = i + 1;
+        BlurList.ItemsSource = null;
+        BlurList.ItemsSource = _blurs;
+        if (sel != null && _blurs.Contains(sel)) BlurList.SelectedItem = sel;
+
+        foreach (var (patch, frame) in _blurVisuals.Values) { StageCanvas.Children.Remove(patch); StageCanvas.Children.Remove(frame); }
+        _blurVisuals.Clear();
+        foreach (var b in _blurs)
+        {
+            // The patch is the real blurred pixels of the shown frame, made the same way as the export.
+            var patch = new Image { Stretch = Stretch.Fill, IsHitTestVisible = false };
+            StageCanvas.Children.Insert(0, patch);   // under the crop mask, like the real blur
+            var frame = new Border { Background = new SolidColorBrush(Color.FromArgb(1, 255, 255, 255)), Cursor = Cursors.SizeAll, Tag = b };
+            frame.MouseLeftButtonDown += OnBlurMouseDown;
+            Panel.SetZIndex(frame, 1);   // above the crop box, so a blur inside the crop can be grabbed
+            StageCanvas.Children.Add(frame);
+            _blurVisuals[b] = (patch, frame);
+            UpdateBlurVisual(b);
+        }
+        AddBlurButton.IsEnabled = _blurs.Count < BlurBox.MaxCount;
+        DoneBlurButton.IsEnabled = _blurs.Count > 0;
+        BlurHint.Text = _blurs.Count >= BlurBox.MaxCount
+            ? $"That's the most boxes ({BlurBox.MaxCount}). Remove one to add another."
+            : "Hide part of the GIF. Drag a blur box on the preview to move it, the corner to resize. Click 'Done' to finalize each blur. Up to 10 blur boxes.";
+        UpdateBlurHandle();
+    }
+
+    private void OnAddBlur(object sender, RoutedEventArgs e)
+    {
+        if (_blurs.Count >= BlurBox.MaxCount) return;
+        Snapshot();
+        var a = VisibleArea;
+        double w = Math.Min(_frameW, Math.Max(BlurBox.MinSize, Math.Round(a.Width / 4)));
+        double h = Math.Min(_frameH, Math.Max(BlurBox.MinSize, Math.Round(a.Height / 4)));
+        // Stagger new boxes a little so they don't land exactly on top of each other.
+        double shift = (_blurs.Count % 5) * Math.Round(Math.Min(a.Width, a.Height) / 20);
+        double x = Math.Clamp(Math.Round(a.X + (a.Width - w) / 2 + shift), 0, _frameW - w);
+        double y = Math.Clamp(Math.Round(a.Y + (a.Height - h) / 2 + shift), 0, _frameH - h);
+        var box = new BlurBox { Area = new Rect(x, y, w, h) };
+        _blurs.Add(box);
+        _blurEditing = true;
+        RebuildBlurVisuals();
+        BlurList.SelectedItem = box;
+    }
+
+    private void OnRemoveBlur(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        Snapshot();
+        _blurs.Remove(b);
+        RebuildBlurVisuals();
+        LoadBlurEditor();
+    }
+
+    private void OnBlurSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (CurrentBlur != null) _blurEditing = true;   // picking a box in the list brings the outlines back
+        LoadBlurEditor();
+        foreach (var b in _blurs) UpdateBlurVisual(b);
+        UpdateBlurHandle();
+    }
+
+    private void OnBlurDone(object sender, RoutedEventArgs e)
+    {
+        _blurEditing = false;
+        BlurList.SelectedItem = null;   // also hides the editor fields and the handle
+        foreach (var b in _blurs) UpdateBlurVisual(b);
+        UpdateBlurHandle();
+    }
+
+    private void LoadBlurEditor()
+    {
+        var b = CurrentBlur;
+        BlurEditor.IsEnabled = b != null;
+        if (b == null) { BlurFromText.Text = BlurToText.Text = ""; return; }
+        BlurFromText.Text = $"#{b.FromFrame + 1}";
+        BlurToText.Text = b.ToFrame == int.MaxValue ? "last" : $"#{b.ToFrame + 1}";
+    }
+
+    private void OnBlurFrom(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        b.FromFrame = _current;
+        if (b.ToFrame < b.FromFrame) b.ToFrame = int.MaxValue;
+        LoadBlurEditor();
+        ShowFrame(_current);
+    }
+
+    private void OnBlurTo(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        b.ToFrame = _current;
+        if (b.FromFrame > b.ToFrame) b.FromFrame = 0;
+        LoadBlurEditor();
+        ShowFrame(_current);
+    }
+
+    private void OnBlurAll(object sender, RoutedEventArgs e)
+    {
+        if (CurrentBlur is not BlurBox b) return;
+        b.FromFrame = 0;
+        b.ToFrame = int.MaxValue;
+        LoadBlurEditor();
+        ShowFrame(_current);
+    }
+
+    private void UpdateBlurVisual(BlurBox b)
+    {
+        if (!_blurVisuals.TryGetValue(b, out var v)) return;
+        var a = b.Area;
+        bool on = b.IsOnFrame(_current) && _currentImage != null;
+        if (on)
+        {
+            var r = b.PixelArea(_currentImage!.PixelWidth, _currentImage.PixelHeight);
+            v.Patch.Source = BlurBox.BlurPatch(_currentImage, r, BlurBox.Radius(_frameH));
+            Canvas.SetLeft(v.Patch, r.X);
+            Canvas.SetTop(v.Patch, r.Y);
+            v.Patch.Width = r.Width;
+            v.Patch.Height = r.Height;
+        }
+        v.Patch.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+
+        // Only the box being edited gets an outline. The others show just their blur, as they will export,
+        // but can still be clicked on the preview to pick them up again.
+        bool selected = CurrentBlur == b;
+        Canvas.SetLeft(v.Frame, a.X);
+        Canvas.SetTop(v.Frame, a.Y);
+        v.Frame.Width = a.Width;
+        v.Frame.Height = a.Height;
+        v.Frame.BorderThickness = new Thickness(2);
+        v.Frame.BorderBrush = selected ? Brushes.White : Brushes.Transparent;
+        v.Frame.Visibility = _blurEditing && (b.IsOnFrame(_current) || selected) ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateBlurHandle()
+    {
+        if (!_blurEditing || CurrentBlur is not BlurBox b) { BlurHandle.Visibility = Visibility.Collapsed; return; }
+        BlurHandle.Visibility = Visibility.Visible;
+        Canvas.SetLeft(BlurHandle, b.Area.Right - 8);
+        Canvas.SetTop(BlurHandle, b.Area.Bottom - 8);
+    }
+
+    private void OnBlurMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_busy) return;
+        var frame = (Border)sender;
+        var b = (BlurBox)frame.Tag;
+        BlurList.SelectedItem = b;
+        _drag = Drag.Blur;
+        _dragBlur = b;
+        _dragStart = e.GetPosition(StageCanvas);
+        _dragOrigin = b.Area.TopLeft;
+        frame.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnBlurResize(object sender, DragDeltaEventArgs e)
+    {
+        if (_busy || CurrentBlur is not BlurBox b) return;
+        var a = b.Area;
+        double w = Math.Clamp(Math.Round(a.Width + e.HorizontalChange), BlurBox.MinSize, Math.Max(BlurBox.MinSize, _frameW - a.X));
+        double h = Math.Clamp(Math.Round(a.Height + e.VerticalChange), BlurBox.MinSize, Math.Max(BlurBox.MinSize, _frameH - a.Y));
+        b.Area = new Rect(a.X, a.Y, w, h);
+        UpdateBlurVisual(b);
+        UpdateBlurHandle();
     }
 
     // ------------------------------------------------------------------ crop
@@ -631,6 +827,14 @@ public partial class GifEditorWindow : Window
             l.Y = Math.Round(_dragOrigin.Y + dy);
             UpdateVisual(l);
         }
+        else if (_drag == Drag.Blur && _dragBlur is BlurBox b)
+        {
+            double x = Math.Clamp(_dragOrigin.X + dx, 0, _frameW - b.Area.Width);
+            double y = Math.Clamp(_dragOrigin.Y + dy, 0, _frameH - b.Area.Height);
+            b.Area = new Rect(Math.Round(x), Math.Round(y), b.Area.Width, b.Area.Height);
+            UpdateBlurVisual(b);
+            UpdateBlurHandle();
+        }
         else if (_drag == Drag.Crop)
         {
             double x = Math.Clamp(_dragOrigin.X + dx, 0, _frameW - _crop.Width);
@@ -645,6 +849,7 @@ public partial class GifEditorWindow : Window
         if (_drag == Drag.None) return;
         _drag = Drag.None;
         _dragLayer = null;
+        _dragBlur = null;
         Mouse.Capture(null);
     }
 
@@ -681,7 +886,7 @@ public partial class GifEditorWindow : Window
         {
             Int32Rect? crop = _cropPreset.IsOff ? null : new Int32Rect((int)_crop.X, (int)_crop.Y, (int)_crop.Width, (int)_crop.Height);
             var loop = (LoopChoice?)LoopCombo.SelectedItem ?? LoopChoice.All[0];
-            await GifRenderer.ExportAsync(_frames, _layers, crop, _frameW, _frameH, loop.FfmpegLoop,
+            await GifRenderer.ExportAsync(_frames, _layers, _blurs, crop, _frameW, _frameH, loop.FfmpegLoop,
                 dither: QualityCombo.SelectedIndex == 0, dlg.FileName,
                 new Progress<double>(v => ExportProgress.Value = v), _exportCts.Token);
 
@@ -724,6 +929,7 @@ public partial class GifEditorWindow : Window
         Tools.IsEnabled = !busy;
         Strip.IsEnabled = !busy;
         TextPanel.IsEnabled = !busy;
+        BlurPanel.IsEnabled = !busy;
         CropCombo.IsEnabled = !busy;
         ExportButton.IsEnabled = !busy;
         CancelButton.IsEnabled = busy;

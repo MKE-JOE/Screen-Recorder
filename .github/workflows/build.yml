@@ -80,7 +80,7 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Self-test failed with exit code $($p.ExitCode)" }
           Remove-Item publish/selftest.log
 
-      - name: Self-test the GIF editor (load frames, text, crop, boomerang, reduce, undo/redo, export)
+      - name: Self-test the GIF editor (load frames, text, blur boxes, crop, boomerang, reduce, undo/redo, export)
         shell: pwsh
         run: |
           $p = Start-Process publish/ScreenGank.exe -ArgumentList '--selftest-gif', "$PWD/smoke/src.mp4", "$PWD/smoke/editor.gif" -PassThru

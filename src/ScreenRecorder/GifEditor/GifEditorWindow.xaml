@@ -70,8 +70,16 @@
                                 <Path x:Name="CropMask" Fill="#99000000" IsHitTestVisible="False" Visibility="Collapsed"/>
                                 <Border x:Name="CropBox" BorderBrush="White" BorderThickness="2" Background="#01FFFFFF"
                                         Cursor="SizeAll" Visibility="Collapsed" MouseLeftButtonDown="OnCropMouseDown"/>
-                                <Thumb x:Name="CropHandle" Width="16" Height="16" Cursor="SizeNWSE" Visibility="Collapsed"
+                                <Thumb x:Name="CropHandle" Width="16" Height="16" Cursor="SizeNWSE" Visibility="Collapsed" Panel.ZIndex="3"
                                        DragDelta="OnCropResize">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Rectangle Fill="White" Stroke="#2563EB" StrokeThickness="2"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                                <Thumb x:Name="BlurHandle" Width="16" Height="16" Cursor="SizeNWSE" Visibility="Collapsed" Panel.ZIndex="3"
+                                       DragDelta="OnBlurResize">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Rectangle Fill="White" Stroke="#2563EB" StrokeThickness="2"/>
@@ -164,6 +172,42 @@
                                 <TextBlock Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
                                            Text="Drag the text on the preview to move it. Use frame ranges to make captions appear and disappear."/>
                             </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,10,0,0">
+                        <StackPanel x:Name="BlurPanel">
+                            <DockPanel Margin="0,0,0,8">
+                                <Button x:Name="DoneBlurButton" DockPanel.Dock="Right" Content="Done" Click="OnBlurDone" Margin="4,0,0,0" IsEnabled="False"
+                                        ToolTip="Hide the box outlines to review the blur as it will look in the saved GIF"/>
+                                <Button DockPanel.Dock="Right" Content="Remove" Click="OnRemoveBlur" Margin="4,0,0,0"/>
+                                <Button x:Name="AddBlurButton" DockPanel.Dock="Right" Content="+ Add blur" Click="OnAddBlur"/>
+                                <TextBlock Style="{StaticResource CardTitle}" Margin="0" VerticalAlignment="Center" Text="Blur"/>
+                            </DockPanel>
+                            <ListBox x:Name="BlurList" Height="64" SelectionChanged="OnBlurSelected"/>
+                            <StackPanel x:Name="BlurEditor" Margin="0,8,0,0" IsEnabled="False">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="4"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Style="{StaticResource Label}" Text="From frame" Width="72"/>
+                                    <TextBlock x:Name="BlurFromText" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                    <Button Grid.Column="2" Content="Set to current" Click="OnBlurFrom"/>
+                                    <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="To frame" Width="72"/>
+                                    <TextBlock x:Name="BlurToText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                    <Button Grid.Row="2" Grid.Column="2" Content="Set to current" Click="OnBlurTo"/>
+                                </Grid>
+                                <Button Content="Blur on all frames" Margin="0,6,0,0" HorizontalAlignment="Left" Click="OnBlurAll"/>
+                            </StackPanel>
+                            <TextBlock x:Name="BlurHint" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
+                                       Text="Hide part of the GIF. Drag a blur box on the preview to move it, the corner to resize. Click &apos;Done&apos; to finalize each blur. Up to 10 blur boxes."/>
                         </StackPanel>
                     </Border>
 
