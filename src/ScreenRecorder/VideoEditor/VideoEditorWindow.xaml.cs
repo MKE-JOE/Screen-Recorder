@@ -465,7 +465,7 @@ public partial class VideoEditorWindow : Window
         AddBlurButton.IsEnabled = _blurs.Count < BlurBox.MaxCount;
         BlurHint.Text = _blurs.Count >= BlurBox.MaxCount
             ? $"That's the most boxes ({BlurBox.MaxCount}). Remove one to add another."
-            : "Hide part of the video. Drag a box on the preview to move it, the corner to resize. Click Done to hide the outlines. Up to 10 boxes.";
+            : "Hide part of the video. Drag a blur box on the preview to move it, the corner to resize. Click 'Done' to finalize each blur. Up to 10 blur boxes.";
         UpdateBlurHandle();
         DoneBlurButton.IsEnabled = _blurs.Count > 0;
     }
