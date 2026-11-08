@@ -210,7 +210,7 @@ public partial class MainWindow : Window
     private async void OnRecord(object sender, RoutedEventArgs e)
     {
         if (_mode != Mode.Idle || !_ffmpegReady) return;
-        if (!ConfirmDiscardUnsaved("Start a new recording")) return;
+        if (!ConfirmDiscardUnsaved("start a new recording")) return;
 
         RECT rect = CaptureCombo.SelectedItem is DisplayInfo d ? d.Bounds : _region.GetCaptureRect();
         var target = Displays.Resolve(rect);
@@ -712,7 +712,7 @@ public partial class MainWindow : Window
             Filter = "Videos|*.mp4;*.mkv;*.mov;*.m4v|All files|*.*",
             InitialDirectory = Directory.Exists(OutputDir) ? OutputDir : null,
         };
-        if (dlg.ShowDialog(this) == true && ConfirmDiscardUnsaved("Open another video"))
+        if (dlg.ShowDialog(this) == true && ConfirmDiscardUnsaved("open another video"))
         {
             DiscardUnsaved();
             LoadVideo(dlg.FileName);
@@ -884,7 +884,7 @@ public partial class MainWindow : Window
         }
         if (_mode == Mode.Finishing) { e.Cancel = true; _closeAfterSave = true; return; }
         if (!_closeAfterSave && !ConfirmCloseWithOpenWork()) { e.Cancel = true; return; }
-        if (!_closeAfterSave && !ConfirmDiscardUnsaved("Close the app")) { e.Cancel = true; return; }
+        if (!_closeAfterSave && !ConfirmDiscardUnsaved("quit")) { e.Cancel = true; return; }
 
         _exportCts?.Cancel();
         _countdownCts?.Cancel();
@@ -933,12 +933,12 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Asks before an unsaved, never-exported recording would be thrown away.</summary>
+    /// <param name="action">What the person is doing, worded to follow "Are you sure you want to", e.g. "quit".</param>
     private bool ConfirmDiscardUnsaved(string action)
     {
         if (_unsavedPath == null || _unsavedExported || !File.Exists(_unsavedPath) || App.SelfTest) return true;
         return MessageBox.Show(this,
-            $"{action}? The current recording hasn't been saved or exported and will be discarded.\n\n" +
-            "To keep it, choose No and press Export… (MP4 at 100% saves it unchanged).",
+            $"Are you sure you want to {action}? The current recording hasn't been exported and will be discarded.",
             "Unsaved recording", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
     }
 
