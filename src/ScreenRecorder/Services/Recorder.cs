@@ -35,6 +35,8 @@ public sealed class Recorder : IAsyncDisposable
     private bool _useGdi;
     private bool _stopping;
     private TaskCompletionSource<bool>? _firstFrame;
+    /// <summary>Serialises start/pause/resume/finish with recovery after a capture interruption.</summary>
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <summary>Raised (on a background thread) if FFmpeg stops on its own while recording.</summary>
     public event Action<string>? Failed;
@@ -53,6 +55,7 @@ public sealed class Recorder : IAsyncDisposable
 
     public async Task StartAsync()
     {
+        using var gate = await LockAsync();
         try
         {
             await StartSegmentAsync();
@@ -67,6 +70,7 @@ public sealed class Recorder : IAsyncDisposable
 
     public async Task PauseAsync()
     {
+        using var gate = await LockAsync();
         if (IsPaused) return;
         await StopSegmentAsync();
         IsPaused = true;
@@ -74,6 +78,7 @@ public sealed class Recorder : IAsyncDisposable
 
     public async Task ResumeAsync()
     {
+        using var gate = await LockAsync();
         if (!IsPaused) return;
         await StartSegmentAsync();
         IsPaused = false;
@@ -82,6 +87,7 @@ public sealed class Recorder : IAsyncDisposable
     /// <summary>Stops recording and writes the final MP4.</summary>
     public async Task<string> FinishAsync(string outputPath)
     {
+        using var gate = await LockAsync();
         await StopSegmentAsync();
         var parts = _segments.Where(s => File.Exists(s) && new FileInfo(s).Length > 1024).ToList();
         if (parts.Count == 0) throw new InvalidOperationException("Nothing was recorded." + Environment.NewLine + TailLog());
@@ -189,7 +195,7 @@ public sealed class Recorder : IAsyncDisposable
             var ff = _firstFrame;
             bool wasRunning = ff != null && ff.Task.IsCompletedSuccessfully && ff.Task.Result;
             ff?.TrySetResult(false);
-            if (!_stopping && wasRunning) Failed?.Invoke("Recording stopped unexpectedly." + Environment.NewLine + TailLog());
+            if (!_stopping && wasRunning) _ = Task.Run(() => RecoverAsync(proc));
         };
 
         var started = await Task.WhenAny(_firstFrame.Task, Task.Delay(TimeSpan.FromSeconds(15)));
@@ -205,6 +211,48 @@ public sealed class Recorder : IAsyncDisposable
         lock (_log) _log.AppendLine($"--- first frame after {launched.Elapsed.TotalSeconds:0.00} s");
         _segments.Add(seg);
         _segmentClock.Restart();
+    }
+
+    /// <summary>
+    /// FFmpeg stopped on its own mid-recording. Usually Windows took Desktop Duplication away for a moment
+    /// (DXGI_ERROR_ACCESS_LOST: an app going full screen, a UAC prompt, a display change). Close the part that
+    /// was recorded and start a new one, like a pause and resume, so the recording carries on with a short cut.
+    /// Only if capture can't be restarted for about 15 seconds does the recording stop.
+    /// </summary>
+    private async Task RecoverAsync(Process crashed)
+    {
+        using var gate = await LockAsync();
+        if (_ffmpeg != crashed || _stopping || IsPaused) return;   // already stopped or paused meanwhile
+        lock (_log) _log.AppendLine($"--- {DateTime.Now:HH:mm:ss.fff} capture stopped unexpectedly, restarting");
+        try { await StopSegmentAsync(); } catch { }
+
+        string last = "";
+        for (int attempt = 1; attempt <= 15; attempt++)
+        {
+            await Task.Delay(attempt == 1 ? 300 : 1000);
+            try
+            {
+                await StartSegmentAsync();
+                try { File.AppendAllText(LogPath, $"--- capture restarted after {attempt} attempt(s){Environment.NewLine}"); } catch { }
+                return;
+            }
+            catch (Exception ex) { last = ex.Message; }
+        }
+        _stopping = true;
+        Failed?.Invoke("Recording stopped unexpectedly and screen capture could not be restarted." + Environment.NewLine + last);
+    }
+
+    private async Task<IDisposable> LockAsync()
+    {
+        await _gate.WaitAsync();
+        return new Releaser(_gate);
+    }
+
+    private sealed class Releaser : IDisposable
+    {
+        private SemaphoreSlim? _s;
+        public Releaser(SemaphoreSlim s) => _s = s;
+        public void Dispose() => Interlocked.Exchange(ref _s, null)?.Release();
     }
 
     private async Task StopSegmentAsync()
