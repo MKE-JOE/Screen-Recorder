@@ -27,6 +27,7 @@ A small, portable screen recorder for Windows 10 and 11. It's a single `ScreenGa
   - Frame strip with thumbnails. Select several frames with Ctrl/Shift to **delete**, **duplicate**, **move** them, or set how long each one shows.
   - **Reverse**, **Boomerang** (forward then back), **Faster / Slower**, and **Reduce** (drops every other frame for a smaller file but keeps the timing). **Undo/Redo** with Ctrl+Z / Ctrl+Y.
   - **Text layers** that appear only on the frames you choose, so captions can come and go. Drag them into place on the preview.
+  - **Blur boxes** (up to 10) to hide part of the GIF on the frames you choose. Drag and resize them on the preview, then click **Done** to review the result without outlines.
   - **Crop** presets for social media: square 1:1, portrait 4:5, wide 16:9, story 9:16, or free.
   - Loop forever, once, or a set number of times. "Best quality" (dithered) or "Smaller file".
   - The file size is shown after saving, with a warning above common limits (Discord 10 MB, X 15 MB).
