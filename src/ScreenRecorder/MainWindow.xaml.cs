@@ -883,6 +883,7 @@ public partial class MainWindow : Window
             return;
         }
         if (_mode == Mode.Finishing) { e.Cancel = true; _closeAfterSave = true; return; }
+        if (!_closeAfterSave && !ConfirmCloseWithOpenWork()) { e.Cancel = true; return; }
         if (!_closeAfterSave && !ConfirmDiscardUnsaved("Close the app")) { e.Cancel = true; return; }
 
         _exportCts?.Cancel();
@@ -905,6 +906,31 @@ public partial class MainWindow : Window
 
     /// <summary>Called when the loaded clip has been exported (here or from an editor), so it's no longer at risk.</summary>
     public void MarkClipKept() => _unsavedExported = true;
+
+    /// <summary>Asks before closing the app would stop a running export or close editors whose edits aren't saved.</summary>
+    private bool ConfirmCloseWithOpenWork()
+    {
+        if (App.SelfTest) return true;
+        var editors = OwnedWindows.OfType<Window>().Where(w =>
+            (w as VideoEditor.VideoEditorWindow)?.HasUnsavedWork == true ||
+            (w as GifEditor.GifEditorWindow)?.HasUnsavedWork == true).ToList();
+        var parts = new List<string>();
+        if (_exportCts != null) parts.Add("A video is still being exported.");
+        if (editors.Count == 1) parts.Add($"The {editors[0].Title} has edits that haven't been saved.");
+        else if (editors.Count > 1) parts.Add($"{editors.Count} editor windows have edits that haven't been saved.");
+        if (parts.Count == 0) return true;
+
+        if (MessageBox.Show(this, string.Join(" ", parts) + "\n\nClose ScreenGank anyway? Unsaved work will be lost.",
+                "Close ScreenGank?", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return false;
+        // Don't ask again in each editor as it closes.
+        foreach (var w in editors)
+        {
+            if (w is VideoEditor.VideoEditorWindow v) v.CloseConfirmed = true;
+            if (w is GifEditor.GifEditorWindow g) g.CloseConfirmed = true;
+        }
+        return true;
+    }
 
     /// <summary>Asks before an unsaved, never-exported recording would be thrown away.</summary>
     private bool ConfirmDiscardUnsaved(string action)

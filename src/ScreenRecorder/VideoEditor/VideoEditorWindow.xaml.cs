@@ -87,11 +87,42 @@ public partial class VideoEditorWindow : Window
         Loaded += async (_, _) => await LoadInfoAsync();
         FileSizeSlider.Value = Math.Clamp(options.SizePercent, 25, 100);
         SidePanel.IsEnabled = false;
-        Closing += (_, _) => { _tick.Stop(); _exportCts?.Cancel(); Media.Close(); };
+        Closing += OnClosing;
 
         Media.Volume = 0;
         Media.Source = new Uri(options.Input);
         Media.Play();   // opens the file; paused again in MediaOpened
+    }
+
+    // ------------------------------------------------------------------ closing
+
+    /// <summary>True until a video has been saved from this editor, or while a save is running.</summary>
+    public bool HasUnsavedWork => _busy || _lastSaved == null;
+
+    /// <summary>Set when the person already agreed to lose the edits (for example when closing the app).</summary>
+    public bool CloseConfirmed { get; set; }
+
+    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (!CloseConfirmed && SelfTestOutput == null && !App.SelfTest && !ConfirmClose())
+        {
+            e.Cancel = true;
+            return;
+        }
+        _tick.Stop();
+        _exportCts?.Cancel();
+        Media.Close();
+    }
+
+    private bool ConfirmClose()
+    {
+        string? message = _busy
+            ? "The video is still being saved. Stop saving and close the editor?"
+            : _lastSaved == null
+                ? "You haven't saved this video yet. Close the editor and lose your edits?"
+                : null;
+        return message == null ||
+            MessageBox.Show(this, message, "Video Editor", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
     }
 
     // ------------------------------------------------------------------ playback
