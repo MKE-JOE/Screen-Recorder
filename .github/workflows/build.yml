@@ -64,6 +64,22 @@ jobs:
           & "../$ff" -hide_banner -loglevel error -y -ss 1 -t 2 -i src.mp4 -map 0:v:0 -map 0:a? -vf $dt -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 320k out.mkv
           if (-not (Test-Path out.mkv)) { throw "MKV export failed" }
 
+      - name: Check capture timestamps don't turn late frames into repeats
+        shell: pwsh
+        run: |
+          # Same expression as Recorder.FrameTimeExpr at 30 fps. Frames arrive up to 0.9 frame late, plus
+          # 3% slow frames 1.35 frames late; none of them skips a tick, so almost nothing should be repeated.
+          $ff = "src/FfmpegPayload/Assets/ffmpeg.exe"
+          $t = "33333.333333"; $r = "(PTS-N*$t)"; $origin = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000
+          $e = "st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)));st(1,if(eq(N,0),$r,min($r,ld(1))));st(4,floor(($r-ld(1))/$t));st(3,if(gt(ld(4),ld(2)),if(gte(ld(3),2),0*st(2,ld(4)),ld(3)+1),0));(N+ld(2))*$t+ld(1)+ld(0)-$origin"
+          $jit = "PTS+random(0)*30000+if(gt(random(1),0.97),45000,0)"
+          $out = & $ff -hide_banner -nostats -loglevel warning -progress pipe:1 -y -copyts -filter_complex "testsrc2=size=320x180:rate=30,settb=AVTB,setpts='$jit',realtime,setpts='$e'[v]" -map "[v]" -t 20 -fps_mode cfr -r 30 -c:v libx264 -preset ultrafast -f null -
+          if ($LASTEXITCODE -ne 0) { throw "FFmpeg rejected the timestamp expression" }
+          $dup = [int](($out | Select-String '^dup_frames=(\d+)' | Select-Object -Last 1).Matches[0].Groups[1].Value)
+          $drop = [int](($out | Select-String '^drop_frames=(\d+)' | Select-Object -Last 1).Matches[0].Groups[1].Value)
+          "repeated $dup, dropped $drop of 600"
+          if ($dup + $drop -gt 6) { throw "Late frames were turned into repeats ($dup repeated, $drop dropped)" }
+
       - name: Publish single-file exe
         run: dotnet publish src/ScreenRecorder/ScreenRecorder.csproj -c Release -o publish -p:Version=1.0.${{ github.run_number }}
 
@@ -124,5 +140,5 @@ jobs:
 
             The app isn't code-signed yet, so Windows may say "Windows protected your PC". Click **More info**, then **Run anyway**.
 
-            Found a problem? Open an issue and attach `last-recording.txt` and `last-recording-ffmpeg.log` from `%LOCALAPPDATA%\PortableScreenRecorder`.
+            Found a problem? Open an issue and attach `last-recording.txt`, `last-recording-ffmpeg.log` and `encoder-check.log` from `%LOCALAPPDATA%\PortableScreenRecorder`.
           files: publish/ScreenGank.exe

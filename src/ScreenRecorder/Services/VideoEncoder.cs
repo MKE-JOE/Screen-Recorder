@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace ScreenRecorder.Services;
 
 /// <summary>
@@ -16,6 +18,9 @@ public sealed record VideoEncoder(string Name, string PixelFormat, Func<int, str
     /// <summary>Set once detection has confirmed frames can stay on the GPU all the way to this encoder.</summary>
     public bool ZeroCopy { get; init; }
 
+    /// <summary>Other ways to keep frames on the GPU, tried in order when <see cref="GpuFilter"/> doesn't work.</summary>
+    public string[] OtherGpuFilters { get; init; } = Array.Empty<string>();
+
     private static readonly VideoEncoder[] HardwareChoices =
     {
         new("NVIDIA (NVENC)", "nv12", fps => new[]
@@ -27,7 +32,10 @@ public sealed record VideoEncoder(string Name, string PixelFormat, Func<int, str
         {
             "-c:v", "h264_qsv", "-preset", "faster", "-global_quality", "20", "-look_ahead", "0",
             "-g", (fps * 2).ToString(),
-        }, "hwmap=derive_device=qsv,format=qsv,vpp_qsv=format=nv12"),
+        }, "hwmap=derive_device=qsv,format=qsv,vpp_qsv=format=nv12")
+        {
+            OtherGpuFilters = new[] { "hwmap=derive_device=qsv,format=qsv,scale_qsv=format=nv12" },
+        },
         new("AMD (AMF)", "nv12", fps => new[]
         {
             "-c:v", "h264_amf", "-usage", "transcoding", "-quality", "balanced",
@@ -45,29 +53,47 @@ public sealed record VideoEncoder(string Name, string PixelFormat, Func<int, str
     /// <summary>The first encoder that actually works on this PC (tested once with a tiny encode).</summary>
     public static Task<VideoEncoder> BestAsync() => _best ??= DetectAsync();
 
+    /// <summary>What detection tried and why each attempt failed, kept for troubleshooting.</summary>
+    public static string CheckLogPath => Path.Combine(Ffmpeg.AppDataDir, "encoder-check.log");
+
     private static async Task<VideoEncoder> DetectAsync()
     {
-        foreach (var enc in HardwareChoices)
+        var log = new StringBuilder($"Encoder check {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}");
+        try
         {
-            // Best: capture and encode entirely on the graphics card.
-            if (enc.GpuFilter != null && await WorksAsync(new[]
+            foreach (var enc in HardwareChoices)
+            {
+                // Best: capture and encode entirely on the graphics card. Without it every frame is copied off the
+                // card and converted on the CPU, and a busy card (playing video, say) makes that copy wait.
+                if (enc.GpuFilter != null)
                 {
-                    "-filter_complex", "ddagrab=output_idx=0:framerate=30" + (enc.GpuFilter.Length > 0 ? "," + enc.GpuFilter : "") + "[v]",
-                    "-map", "[v]", "-frames:v", "15",
-                }, enc.Args(30)))
-                return enc with { ZeroCopy = true };
+                    foreach (var filter in new[] { enc.GpuFilter }.Concat(enc.OtherGpuFilters))
+                    {
+                        if (await WorksAsync(new[]
+                            {
+                                "-filter_complex", "ddagrab=output_idx=0:framerate=30" + (filter.Length > 0 ? "," + filter : "") + "[v]",
+                                "-map", "[v]", "-frames:v", "15",
+                            }, enc.Args(30), $"{enc.Name}, on the GPU ({(filter.Length > 0 ? filter : "no conversion")})", log))
+                            return enc with { GpuFilter = filter, ZeroCopy = true };
+                    }
+                }
 
-            // Next best: frames are converted on the CPU, encoded on the graphics card.
-            if (await WorksAsync(new[]
-                {
-                    "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-frames:v", "15", "-vf", "format=" + enc.PixelFormat,
-                }, enc.Args(30)))
-                return enc;
+                // Next best: frames are converted on the CPU, encoded on the graphics card.
+                if (await WorksAsync(new[]
+                    {
+                        "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-frames:v", "15", "-vf", "format=" + enc.PixelFormat,
+                    }, enc.Args(30), enc.Name, log))
+                    return enc;
+            }
+            return Software;
         }
-        return Software;
+        finally
+        {
+            try { File.WriteAllText(CheckLogPath, log.ToString()); } catch { }
+        }
     }
 
-    private static async Task<bool> WorksAsync(IEnumerable<string> input, IEnumerable<string> codec)
+    private static async Task<bool> WorksAsync(IEnumerable<string> input, IEnumerable<string> codec, string label, StringBuilder log)
     {
         try
         {
@@ -77,8 +103,21 @@ public sealed record VideoEncoder(string Name, string PixelFormat, Func<int, str
             args.AddRange(new[] { "-f", "null", "-" });
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             await Ffmpeg.RunAsync(args, null, 0, null, cts.Token);
+            log.AppendLine($"OK      {label}");
             return true;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            string why = ex switch
+            {
+                OperationCanceledException => "took longer than 15 s",
+                FfmpegException f => f.Details.Trim(),
+                _ => ex.Message,
+            };
+            log.AppendLine($"FAILED  {label}");
+            foreach (var line in why.Split('\n', StringSplitOptions.RemoveEmptyEntries).TakeLast(6))
+                log.Append("        ").AppendLine(line.TrimEnd());
+            return false;
+        }
     }
 }
