@@ -18,6 +18,7 @@ internal static class NativeMethods
     public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
 
     public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_TOPMOST = 0x8;
     public const int WS_EX_TRANSPARENT = 0x20;
     public const int WS_EX_TOOLWINDOW = 0x80;
     public const int WS_EX_NOACTIVATE = 0x08000000;
@@ -25,7 +26,10 @@ internal static class NativeMethods
     public const uint MONITOR_DEFAULTTONEAREST = 2;
     public const uint MONITORINFOF_PRIMARY = 1;
 
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const uint SWP_NOACTIVATE = 0x0010;
 
     public const int WM_HOTKEY = 0x0312;
@@ -45,6 +49,12 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [DllImport("user32.dll")]
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
@@ -168,6 +178,41 @@ internal static class WindowHelpers
         if (hwnd == IntPtr.Zero) return;
         try { NativeMethods.SetWindowDisplayAffinity(hwnd, exclude ? NativeMethods.WDA_EXCLUDEFROMCAPTURE : NativeMethods.WDA_NONE); }
         catch { /* not supported */ }
+    }
+
+    /// <summary>
+    /// Keeps a Topmost window on top. Two things can bury it: Windows sometimes drops the always-on-top flag
+    /// while WPF still thinks it is set, and other apps (the Windows Photos viewer, for one) open their own
+    /// always-on-top windows above it. This raises it again when it is shown and, while it is visible, twice a
+    /// second whenever the flag is gone or another app is in front. It never takes focus, and it leaves the
+    /// order alone while this app is in front, so the app's own dialogs stay above the frame.
+    /// </summary>
+    public static void KeepOnTop(System.Windows.Window window)
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        uint ownPid = (uint)Environment.ProcessId;
+        void Restore(bool force)
+        {
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (hwnd == IntPtr.Zero || !window.IsVisible) return;
+            long style = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
+            if (!force && (style & NativeMethods.WS_EX_TOPMOST) != 0)
+            {
+                var front = NativeMethods.GetForegroundWindow();
+                if (front == IntPtr.Zero) return;
+                NativeMethods.GetWindowThreadProcessId(front, out uint frontPid);
+                if (frontPid == ownPid) return;   // our own window or dialog is in front: leave the order alone
+            }
+            NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+        timer.Tick += (_, _) => Restore(force: false);
+        window.IsVisibleChanged += (_, e) =>
+        {
+            if ((bool)e.NewValue) { Restore(force: true); timer.Start(); }
+            else timer.Stop();
+        };
+        window.Closed += (_, _) => timer.Stop();
     }
 
     public static void SetExStyle(IntPtr hwnd, int flags, bool on)
