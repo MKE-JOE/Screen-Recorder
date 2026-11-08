@@ -173,8 +173,30 @@ public partial class GifEditorWindow : Window
         LoadingProgress.Value = 0;
     }
 
+    /// <summary>True until a GIF has been saved from this editor, or while a save is running.</summary>
+    public bool HasUnsavedWork => _busy || _lastSaved == null;
+
+    /// <summary>Set when the person already agreed to lose the edits (for example when closing the app).</summary>
+    public bool CloseConfirmed { get; set; }
+
+    private bool ConfirmClose()
+    {
+        string? message = _busy
+            ? "The GIF is still being saved. Stop saving and close the editor?"
+            : _lastSaved == null
+                ? "You haven't saved this GIF yet. Close the editor and lose your edits?"
+                : null;
+        return message == null ||
+            MessageBox.Show(this, message, "GIF Editor", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+    }
+
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (!CloseConfirmed && SelfTestOutput == null && !App.SelfTest && _frames.Count > 0 && !ConfirmClose())
+        {
+            e.Cancel = true;
+            return;
+        }
         _play.Stop();
         _closing.Cancel();
         _exportCts?.Cancel();
