@@ -324,11 +324,7 @@ public sealed class Recorder : IAsyncDisposable
         {
             fc.Append(CultureInfo.InvariantCulture,
                 $"ddagrab=output_idx={t.DdaOutputIndex}:framerate={fps}:draw_mouse=1:video_size={t.Width}x{t.Height}:offset_x={t.DdaOffsetX}:offset_y={t.DdaOffsetY}");
-            // Timestamps come from the moment Desktop Duplication grabbed each frame (its own PTS), mapped onto the
-            // wall clock. The offset between the two clocks is the smallest one seen so far (frames that reached this
-            // filter without delay), allowed to creep up 20 µs per frame to follow clock drift.
-            fc.Append(CultureInfo.InvariantCulture,
-                $",settb=AVTB,setpts='PTS+st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)))-{originUs}'");
+            fc.Append(",settb=AVTB,setpts='").Append(FrameTimeExpr(fps, originUs)).Append('\'');
             if (_opt.Encoder.ZeroCopy)
             {
                 if (!string.IsNullOrEmpty(_opt.Encoder.GpuFilter)) fc.Append(',').Append(_opt.Encoder.GpuFilter);
@@ -366,6 +362,33 @@ public sealed class Recorder : IAsyncDisposable
         if (_pipes.Count > 0) a.AddRange(new[] { "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-ac", "2" });
         a.Add(output);
         return a;
+    }
+
+    /// <summary>
+    /// setpts expression (time base: microseconds) that gives each Desktop Duplication frame the time of the capture
+    /// tick it belongs to, on the wall clock that the audio also uses.
+    /// <para>
+    /// ddagrab grabs on a fixed tick (every 1/fps) but stamps a frame with the moment the grab finished, which is
+    /// anywhere up to almost a whole frame late: Windows wakes FFmpeg in ~15.6 ms steps, and the grab itself waits up
+    /// to half a frame for the screen to change. Any extra hiccup pushed a frame past FFmpeg's constant-frame-rate
+    /// tolerance, so it was written twice and a later one dropped, a visible repeat, although the frame was captured
+    /// on its tick. Here a frame keeps its tick unless ddagrab really skipped one (it was asked more than a frame
+    /// late): only then is a frame repeated, which is what "fell behind" should mean.
+    /// </para>
+    /// Registers: 0 = wall clock minus ddagrab clock (smallest seen, creeping up 20 µs a frame to follow drift);
+    /// 1 = earliest ddagrab time relative to frame number (tick phase); 2 = ticks skipped so far;
+    /// 3 = frames in a row that look like a skip (3 are needed, so one slow frame doesn't count); 4 = this frame's.
+    /// </summary>
+    internal static string FrameTimeExpr(int fps, long originUs)
+    {
+        string t = (1_000_000.0 / fps).ToString("0.######", CultureInfo.InvariantCulture);
+        string r = $"(PTS-N*{t})";
+        return string.Join(";",
+            "st(0,if(eq(N,0),RTCTIME-PTS,min(RTCTIME-PTS,ld(0)+20)))",
+            $"st(1,if(eq(N,0),{r},min({r},ld(1))))",
+            $"st(4,floor(({r}-ld(1))/{t}))",
+            "st(3,if(gt(ld(4),ld(2)),if(gte(ld(3),2),0*st(2,ld(4)),ld(3)+1),0))",
+            $"(N+ld(2))*{t}+ld(1)+ld(0)-{originUs.ToString(CultureInfo.InvariantCulture)}");
     }
 
     private async Task PumpStderr(Process p)
